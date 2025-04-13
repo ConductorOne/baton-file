@@ -1,0 +1,301 @@
+{
+  "users": [
+    {
+      "name": "alice.admin",
+      "display_name": "Alice Admin",
+      "email": "alice.admin@example.com",
+      "status": "active",
+      "type": "",
+      "profile": {
+        "userid": "1230985496",
+        "login": "alice.admin",
+        "first_name": "Alice",
+        "last_name": "Admin",
+        "department": "IT",
+        "title": "System Administrator",
+        "phone_number": "555-123-4567",
+        "hire_date": "2025-01-02"
+      }
+    },
+    {
+      "name": "dave.developer",
+      "display_name": "Dave Developer",
+      "email": "dave.developer@example.com",
+      "status": "active",
+      "type": "",
+      "profile": {
+        "userid": "1230985497",
+        "login": "dave.developer",
+        "first_name": "Dave",
+        "last_name": "Developer",
+        "department": "Engineering",
+        "title": "Software Engineer",
+        "phone_number": "555-123-4568",
+        "hire_date": "2025-01-02"
+      }
+    },
+    {
+      "name": "ursula.user",
+      "display_name": "Ursula User",
+      "email": "ursula.user@example.com",
+      "status": "inactive",
+      "type": "",
+      "profile": {
+        "userid": "1230985498",
+        "login": "ursula.user",
+        "first_name": "Ursula",
+        "last_name": "User",
+        "department": "QA",
+        "title": "QA Analyst",
+        "phone_number": "555-123-4569",
+        "hire_date": "2025-01-02"
+      }
+    },
+    {
+      "name": "svc.account.01",
+      "display_name": "Service Account 01",
+      "email": "svc.account.01@example.com",
+      "status": "active",
+      "type": "service",
+      "profile": {
+        "userid": "svc-account-01",
+        "login": "svc.account.01",
+        "department": "Engineering"
+      }
+    }
+  ],
+  "resources": [
+    {
+      "resource_type": "workspace",
+      "resource_function": "group",
+      "name": "development_workspace",
+      "display_name": "Development Workspace",
+      "description": "Development Workspace",
+      "parent_resource": ""
+    },
+    {
+      "resource_type": "workspace",
+      "resource_function": "group",
+      "name": "production_workspace",
+      "display_name": "Production Workspace",
+      "description": "Production Workspace",
+      "parent_resource": ""
+    },
+    {
+      "resource_type": "team",
+      "resource_function": "group",
+      "name": "app_admin",
+      "display_name": "Application Admin",
+      "description": "Application Administration team",
+      "parent_resource": ""
+    },
+    {
+      "resource_type": "team",
+      "resource_function": "group",
+      "name": "app_developer",
+      "display_name": "Application Developer",
+      "description": "Application Developer Team",
+      "parent_resource": ""
+    },
+    {
+      "resource_type": "team",
+      "resource_function": "group",
+      "name": "app_user",
+      "display_name": "Application User",
+      "description": "Application User Team",
+      "parent_resource": ""
+    },
+    {
+      "resource_type": "role",
+      "resource_function": "role",
+      "name": "development_workspace_developer",
+      "display_name": "Development Workspace Developer",
+      "description": "Development Workspace Developer",
+      "parent_resource": "development_workspace"
+    },
+    {
+      "resource_type": "role",
+      "resource_function": "role",
+      "name": "development_workspace_owner",
+      "display_name": "Development Workspace Owner",
+      "description": "Development Workspace Owner",
+      "parent_resource": "development_workspace"
+    },
+    {
+      "resource_type": "role",
+      "resource_function": "role",
+      "name": "development_workspace_runner",
+      "display_name": "Development Workspace Runner",
+      "description": "Development Workspace Runner",
+      "parent_resource": "development_workspace"
+    },
+    {
+      "resource_type": "role",
+      "resource_function": "role",
+      "name": "production_workspace_developer",
+      "display_name": "Production Workspace Developer",
+      "description": "Production Workspace Developer",
+      "parent_resource": "production_workspace"
+    },
+    {
+      "resource_type": "role",
+      "resource_function": "role",
+      "name": "production_workspace_owner",
+      "display_name": "Production Workspace Owner",
+      "description": "Production Workspace Owner",
+      "parent_resource": "production_workspace"
+    },
+    {
+      "resource_type": "role",
+      "resource_function": "role",
+      "name": "production_workspace_runner",
+      "display_name": "Production Workspace Runner",
+      "description": "Production Workspace Runner",
+      "parent_resource": "production_workspace"
+    }
+  ],
+  "entitlements": [
+    {
+      "resource_name": "development_workspace",
+      "entitlement": "member",
+      "display_name": "Development Workspace",
+      "description": "Development Workspace"
+    },
+    {
+      "resource_name": "production_workspace",
+      "entitlement": "member",
+      "display_name": "Production Workspace",
+      "description": "Production Workspace"
+    },
+    {
+      "resource_name": "app_admin",
+      "entitlement": "member",
+      "display_name": "Application Admin",
+      "description": "Application Admin Team Members"
+    },
+    {
+      "resource_name": "app_developer",
+      "entitlement": "member",
+      "display_name": "Application Developer",
+      "description": "Application Developer Team Members"
+    },
+    {
+      "resource_name": "app_developer",
+      "entitlement": "member",
+      "display_name": "Application Developer",
+      "description": "Application Developer Team Members"
+    },
+    {
+      "resource_name": "app_user",
+      "entitlement": "member",
+      "display_name": "Application User",
+      "description": "Application User Team Members"
+    },
+    {
+      "resource_name": "development_workspace_developer",
+      "entitlement": "assignment",
+      "display_name": "Development Workspace Developer",
+      "description": "Development Workspace Developer"
+    },
+    {
+      "resource_name": "development_workspace_owner",
+      "entitlement": "assignment",
+      "display_name": "Development Workspace Owner",
+      "description": "Development Workspace Owner"
+    },
+    {
+      "resource_name": "development_workspace_runner",
+      "entitlement": "assignment",
+      "display_name": "Development Workspace Runner",
+      "description": "Development Workspace Runner"
+    },
+    {
+      "resource_name": "production_workspace_developer",
+      "entitlement": "assignment",
+      "display_name": "Production Workspace Developer",
+      "description": "Production Workspace Developer"
+    },
+    {
+      "resource_name": "production_workspace_owner",
+      "entitlement": "assignment",
+      "display_name": "Production Workspace Owner",
+      "description": "Production Workspace Owner"
+    },
+    {
+      "resource_name": "production_workspace_runner",
+      "entitlement": "assignment",
+      "display_name": "Production Workspace Runner",
+      "description": "Production Workspace Runner"
+    }
+  ],
+  "grants": [
+    {
+      "principal": "dave.developer",
+      "entitlement_id": "app_developer:member"
+    },
+    {
+      "principal": "alice.admin",
+      "entitlement_id": "app_admin:member"
+    },
+    {
+      "principal": "ursula.user",
+      "entitlement_id": "app_user:member"
+    },
+    {
+      "principal": "svc.account.01",
+      "entitlement_id": "development_workspace_owner:assignment"
+    },
+    {
+      "principal": "svc.account.01",
+      "entitlement_id": "production_workspace_owner:assignment"
+    },
+    {
+      "principal": "app_developer:member",
+      "entitlement_id": "development_workspace_developer:assignment"
+    },
+    {
+      "principal": "app_developer:member",
+      "entitlement_id": "production_workspace_developer:assignment"
+    },
+    {
+      "principal": "app_admin:member",
+      "entitlement_id": "development_workspace_owner:assignment"
+    },
+    {
+      "principal": "app_admin:member",
+      "entitlement_id": "production_workspace_owner:assignment"
+    },
+    {
+      "principal": "app_user:member",
+      "entitlement_id": "development_workspace_runner:assignment"
+    },
+    {
+      "principal": "app_user:member",
+      "entitlement_id": "production_workspace_runner:assignment"
+    },
+    {
+      "principal": "development_workspace_developer:assignment",
+      "entitlement_id": "development_workspace:member"
+    },
+    {
+      "principal": "development_workspace_owner:assignment",
+      "entitlement_id": "development_workspace:member"
+    },
+    {
+      "principal": "development_workspace_runner:assignment",
+      "entitlement_id": "development_workspace:member"
+    },
+    {
+      "principal": "production_workspace_developer:assignment",
+      "entitlement_id": "production_workspace:member"
+    },
+    {
+      "principal": "production_workspace_owner:assignment",
+      "entitlement_id": "production_workspace:member"
+    },
+    {
+      "principal": "production_workspace_runner:assignment",
+      "entitlement_id": "production_workspace:member"
+    }
+  ]
+} 

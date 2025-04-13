@@ -157,6 +157,7 @@ func init() {
 
 	Xprogram_invocation_name = mustCString(nm)
 	Xprogram_invocation_short_name = mustCString(filepath.Base(nm))
+	X__libc.Fpage_size = Tsize_t(os.Getpagesize())
 }
 
 // RawMem64 represents the biggest uint64 array the runtime can handle.
@@ -226,29 +227,6 @@ func CString(s string) (uintptr, error) {
 	copy(unsafe.Slice((*byte)(unsafe.Pointer(p)), n), s)
 	*(*byte)(unsafe.Pointer(p + uintptr(n))) = 0
 	return p, nil
-}
-
-// GoBytes returns a byte slice from a C char* having length len bytes.
-func GoBytes(s uintptr, len int) []byte {
-	return unsafe.Slice((*byte)(unsafe.Pointer(s)), len)
-}
-
-// GoString returns the value of a C string at s.
-func GoString(s uintptr) string {
-	if s == 0 {
-		return ""
-	}
-
-	var buf []byte
-	for {
-		b := *(*byte)(unsafe.Pointer(s))
-		if b == 0 {
-			return string(buf)
-		}
-
-		buf = append(buf, b)
-		s++
-	}
 }
 
 func mustMalloc(sz Tsize_t) (r uintptr) {

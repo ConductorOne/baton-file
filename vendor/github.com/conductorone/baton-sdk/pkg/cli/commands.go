@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"github.com/spf13/cobra"
@@ -25,10 +24,6 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/field"
 	"github.com/conductorone/baton-sdk/pkg/logging"
 	"github.com/conductorone/baton-sdk/pkg/uotel"
-)
-
-const (
-	otelShutdownTimeout = 5 * time.Second
 )
 
 type ContrainstSetter func(*cobra.Command, field.Configuration) error
@@ -69,9 +64,7 @@ func MakeMainCommand[T field.Configurable](
 			if otelShutdown == nil {
 				return
 			}
-			shutdownCtx, cancel := context.WithDeadline(context.Background(), time.Now().Add(otelShutdownTimeout))
-			defer cancel()
-			err := otelShutdown(shutdownCtx)
+			err := otelShutdown(context.Background())
 			if err != nil {
 				zap.L().Error("error shutting down otel", zap.Error(err))
 			}
@@ -339,12 +332,7 @@ func MakeGRPCServerCommand[T field.Configurable](
 			return err
 		}
 		defer func() {
-			if otelShutdown == nil {
-				return
-			}
-			shutdownCtx, cancel := context.WithDeadline(context.Background(), time.Now().Add(otelShutdownTimeout))
-			defer cancel()
-			err := otelShutdown(shutdownCtx)
+			err := otelShutdown(context.Background())
 			if err != nil {
 				zap.L().Error("error shutting down otel", zap.Error(err))
 			}

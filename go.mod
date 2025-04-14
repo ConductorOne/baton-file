@@ -5,8 +5,10 @@ go 1.24
 toolchain go1.24.0
 
 require (
-	github.com/conductorone/baton-sdk v0.2.92
+	github.com/conductorone/baton-sdk v0.2.93
+	github.com/ennyjfrick/ruleguard-logfatal v0.0.2
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
+	github.com/quasilyte/go-ruleguard/dsl v0.3.22
 	github.com/spf13/viper v1.19.0
 	github.com/xuri/excelize/v2 v2.8.1
 	go.uber.org/zap v1.27.0

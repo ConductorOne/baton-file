@@ -39,27 +39,20 @@ func safeGet(row []string, headerMap map[string]int, headerName string) string {
 // Which ensures each sync operation uses data reflecting the file's state at that moment.
 // The implementation detects the file type based on its extension and dispatches to the appropriate parser function.
 func LoadFileData(filePath string) (*LoadedData, error) {
-	// Extract file extension
 	ext := strings.ToLower(filepath.Ext(filePath))
-
-	// Dispatch to the appropriate loader based on the extension
 	switch ext {
 	case ".xlsx":
-		// For now, logger is passed as nil, as it wasn't part of the original design
-		// and adding full context-based logging here is premature.
-		// TODO: Revisit logging strategy if needed later.
-		return loadExcelData(filePath, nil) // Passing nil logger for now
+		return loadExcelData(filePath, nil) 
 	case ".yaml", ".yml":
-		return loadYamlData(filePath) // Call the YAML loader
+		return loadYamlData(filePath) 
 	case ".json":
-		return loadJsonData(filePath) // Call the JSON loader
+		return loadJsonData(filePath) 
 	default:
 		return nil, fmt.Errorf("unsupported file type: '%s' for file: %s", ext, filePath)
 	}
 }
 
-// --- JSON Loading Logic ---
-
+// JSON Loading Logic
 // loadJsonData handles the specific logic for reading and parsing .json files.
 func loadJsonData(filePath string) (*LoadedData, error) {
 	// Read the entire file content
@@ -77,19 +70,13 @@ func loadJsonData(filePath string) (*LoadedData, error) {
 		return nil, fmt.Errorf("failed to unmarshal JSON data from %s: %w", filePath, err)
 	}
 
-	// Optional basic validation (similar to YAML loader)
 	if loadedData.Users == nil && loadedData.Resources == nil {
-		// Handle potentially empty file or missing keys as needed
 	}
-
-	// Optional logging
-	// fmt.Printf("Loaded %d users, %d resources, %d entitlements, %d grants from JSON: %s\n", ...)
 
 	return &loadedData, nil
 }
 
-// --- YAML Loading Logic ---
-
+// YAML Loading Logic
 // loadYamlData handles the specific logic for reading and parsing .yaml or .yml files.
 func loadYamlData(filePath string) (*LoadedData, error) {
 	// Read the entire file content
@@ -113,20 +100,11 @@ func loadYamlData(filePath string) (*LoadedData, error) {
 		// Or return an error, depending on requirements
 		// return nil, fmt.Errorf("YAML file %s seems empty or missing required top-level keys (users, resources)", filePath)
 	}
-
-	// Logging (optional, consider adding context-based logger later)
-	// fmt.Printf("Loaded %d users, %d resources, %d entitlements, %d grants from YAML: %s\n",
-	// 	len(loadedData.Users),
-	// 	len(loadedData.Resources),
-	// 	len(loadedData.Entitlements),
-	// 	len(loadedData.Grants),
-	// 	filePath)
-
+	
 	return &loadedData, nil
 }
 
 // loadExcelData handles the specific logic for reading and parsing .xlsx files.
-// TODO: Update loadExcelData signature to remove logger if no longer needed, or implement proper context passing.
 func loadExcelData(filePath string, l *zap.Logger) (*LoadedData, error) {
 	// Open the file
 	f, err := excelize.OpenFile(filePath)
@@ -168,10 +146,10 @@ func loadExcelData(filePath string, l *zap.Logger) (*LoadedData, error) {
 						// Use safeGet with the provided headerMap
 						Name:        safeGet(row, headerMap, "Name"),
 						DisplayName: safeGet(row, headerMap, "Display Name"),
-						Email:       safeGet(row, headerMap, "Email"),  // Optional header
-						Status:      safeGet(row, headerMap, "Status"), // Optional header
-						Type:        safeGet(row, headerMap, "Type"),   // Optional header
-						Profile:     make(map[string]interface{}),      // Initialize profile map
+						Email:       safeGet(row, headerMap, "Email"),  
+						Status:      safeGet(row, headerMap, "Status"), 
+						Type:        safeGet(row, headerMap, "Type"),   
+						Profile:     make(map[string]interface{}),      
 					}
 					if userData.Name == "" {
 						if l != nil {

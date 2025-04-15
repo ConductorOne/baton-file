@@ -15,9 +15,8 @@ import (
 )
 
 // The buildResourceTypeCache function constructs a map of resource type definitions based on the 'Resources' sheet.
-// It is used by the ResourceSyncers method for creating resource type definitions based on data provided in the Excel file.
+// It is used by the ResourceSyncers method for creating resource type definitions based on data provided in the file.
 // The ResourceSyncers method requires these definitions to understand resource kinds and their associated traits.
-// The implementation iterates through ResourceData, uses the 'Resource Type' as the ID/Name and the 'Resource Function' to determine the trait via TraitMap.
 func buildResourceTypeCache(ctx context.Context, resources []ResourceData, users []UserData) (map[string]*v2.ResourceType, error) {
 	l := ctxzap.Extract(ctx)
 	l.Debug("Building resource type cache from Resource Function column")

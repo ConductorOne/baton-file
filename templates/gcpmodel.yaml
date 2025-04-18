@@ -62,29 +62,29 @@ users:
       department: Engineering
 
 resources:
-  - resource_type: workspace
+  - resource_type: organization
     resource_function: group
-    name: development_workspace
-    display_name: Development Workspace
-    description: Development Workspace
+    name: organization_01
+    display_name: Organization 01
+    description: Organization 01
     parent_resource: ""
-  - resource_type: workspace
+  - resource_type: organization
     resource_function: group
-    name: production_workspace
-    display_name: Production Workspace
-    description: Production Workspace
+    name: organization_02
+    display_name: Organization 02
+    description: Organization 02
     parent_resource: ""
-  - resource_type: team
+  - resource_type: project
     resource_function: group
-    name: app_admin
-    display_name: Application Admin
-    description: Application Administration team
+    name: project_01
+    display_name: Project 01
+    description: Project 01
     parent_resource: ""
-  - resource_type: team
+  - resource_type: project
     resource_function: group
-    name: app_developer
-    display_name: Application Developer
-    description: Application Developer Team
+    name: project_02
+    display_name: Project 02
+    description: Project 02
     parent_resource: ""
   - resource_type: team
     resource_function: group

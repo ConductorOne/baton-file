@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/types/entitlement"
@@ -23,7 +24,6 @@ func buildResourceTypeCache(ctx context.Context, resources []ResourceData, users
 
 	resourceTypes := make(map[string]*v2.ResourceType)
 
-	// Manually add the user type if users exist
 	if len(users) > 0 {
 		resourceTypes["user"] = &v2.ResourceType{
 			Id:          "user",
@@ -32,17 +32,15 @@ func buildResourceTypeCache(ctx context.Context, resources []ResourceData, users
 		}
 	}
 
-	// Process types defined in the Resources sheet
 	for _, rData := range resources {
 		typeStringLower := strings.ToLower(rData.ResourceType)
 		if typeStringLower == "user" {
-			continue // Skip user type, handled manually
+			continue
 		}
 		if _, exists := resourceTypes[typeStringLower]; exists {
-			continue // Already processed this type
+			continue
 		}
 
-		// Determine trait from the Resource Function column
 		var traits []v2.ResourceType_Trait
 		traitStringLower := strings.ToLower(rData.ResourceFunction)
 		if traitEnum, ok := TraitMap[traitStringLower]; ok {
@@ -55,10 +53,8 @@ func buildResourceTypeCache(ctx context.Context, resources []ResourceData, users
 			traits = append(traits, v2.ResourceType_TRAIT_UNSPECIFIED) // Default to UNSPECIFIED if not mapped
 		}
 
-		// Use Resource Type string for ID and Title Case for DisplayName
 		displayName := cases.Title(language.English).String(typeStringLower)
 
-		// Store the determined resource type
 		resourceTypes[typeStringLower] = &v2.ResourceType{
 			Id:          typeStringLower,
 			DisplayName: displayName,
@@ -87,17 +83,17 @@ var TraitMap = map[string]v2.ResourceType_Trait{
 // The buildResourceCache function constructs a map of resource objects from the loaded data.
 // It is called by syncer methods to create resource instances based on UserData and ResourceData.
 // The SDK requires these v2.Resource objects, including trait annotations, for various operations like listing and grant processing.
-// The implementation processes users and other resources, uses rs.NewUserResource or rs.NewResource with appropriate rs.WithXxxTrait options, and returns the cache.
+// The implementation processes users (including parsing LastLogin string in MM/DD/YYYY format) and other resources,
+// uses rs.NewUserResource or rs.NewResource with appropriate rs.WithXxxTrait options, and returns the cache map keyed by resource name/ID.
 func buildResourceCache(ctx context.Context, users []UserData, resources []ResourceData, resourceTypes map[string]*v2.ResourceType) (map[string]*v2.Resource, error) {
 	l := ctxzap.Extract(ctx)
 	cache := make(map[string]*v2.Resource)
 
 	userResourceType, userTypeFound := resourceTypes["user"]
-	if !userTypeFound && len(users) > 0 { // Only error if users exist but type doesn't
+	if !userTypeFound && len(users) > 0 {
 		return nil, fmt.Errorf("'user' resource type is not defined but user data exists")
 	}
 
-	// Process Users first
 	for i, userData := range users {
 		if userData.Name == "" {
 			l.Warn("Skipping user entry with empty name", zap.Int("row_index", i+2))
@@ -119,7 +115,7 @@ func buildResourceCache(ctx context.Context, users []UserData, resources []Resou
 			userOpts = append(userOpts, rs.WithUserProfile(userData.Profile))
 		}
 
-		userStatus := v2.UserTrait_Status_STATUS_ENABLED // Default
+		userStatus := v2.UserTrait_Status_STATUS_ENABLED
 		statusLower := strings.ToLower(strings.TrimSpace(userData.Status))
 		if statusLower != "" {
 			switch statusLower {
@@ -137,7 +133,7 @@ func buildResourceCache(ctx context.Context, users []UserData, resources []Resou
 		}
 		userOpts = append(userOpts, rs.WithStatus(userStatus))
 
-		userAccountType := v2.UserTrait_ACCOUNT_TYPE_HUMAN // Default
+		userAccountType := v2.UserTrait_ACCOUNT_TYPE_HUMAN
 		accountTypeLower := strings.ToLower(strings.TrimSpace(userData.Type))
 		if accountTypeLower != "" {
 			switch accountTypeLower {
@@ -155,6 +151,20 @@ func buildResourceCache(ctx context.Context, users []UserData, resources []Resou
 		}
 		userOpts = append(userOpts, rs.WithAccountType(userAccountType))
 
+		if userData.LastLogin != "" {
+			lastLoginTime, err := time.Parse("01/02/2006", userData.LastLogin)
+			if err != nil {
+				l.Warn("Failed to parse LastLogin date for user, skipping field (expected format MM/DD/YYYY)",
+					zap.String("user_name", userData.Name),
+					zap.String("last_login_value", userData.LastLogin),
+					zap.Error(err),
+					zap.Int("row_index", i+2),
+				)
+			} else {
+				userOpts = append(userOpts, rs.WithLastLogin(lastLoginTime))
+			}
+		}
+
 		userResource, err := rs.NewUserResource(userData.DisplayName, userResourceType, userData.Name, userOpts)
 		if err != nil {
 			l.Error("Failed to create user resource object", zap.Error(err), zap.String("user_name", userData.Name))
@@ -163,7 +173,6 @@ func buildResourceCache(ctx context.Context, users []UserData, resources []Resou
 		cache[userData.Name] = userResource
 	}
 
-	// Process other Resources
 	for i, resourceData := range resources {
 		if resourceData.Name == "" {
 			l.Warn("Skipping resource entry with empty name", zap.Int("row_index", i+2))
@@ -187,10 +196,8 @@ func buildResourceCache(ctx context.Context, users []UserData, resources []Resou
 			continue
 		}
 
-		// Prepare resource options based on traits
 		var resourceOptions []rs.ResourceOption
 		if len(resourceType.Traits) > 0 {
-			// Assuming the primary trait determines the annotation needed for validation
 			switch resourceType.Traits[0] {
 			case v2.ResourceType_TRAIT_USER:
 				resourceOptions = append(resourceOptions, rs.WithUserTrait())
@@ -205,13 +212,11 @@ func buildResourceCache(ctx context.Context, users []UserData, resources []Resou
 			}
 		}
 
-		// Create the resource, applying trait-specific options
-		// Parent linking is deferred.
 		res, err := rs.NewResource(
 			resourceData.DisplayName,
 			resourceType,
 			resourceData.Name,
-			resourceOptions..., // Pass the determined options
+			resourceOptions...,
 		)
 		if err != nil {
 			l.Error("Failed to create resource object", zap.Error(err), zap.String("resource_name", resourceData.Name))
@@ -219,6 +224,38 @@ func buildResourceCache(ctx context.Context, users []UserData, resources []Resou
 		}
 
 		cache[resourceData.Name] = res
+	}
+
+	for _, resourceData := range resources {
+		if resourceData.ParentResource == "" {
+			continue
+		}
+
+		resource, exists := cache[resourceData.Name]
+		if !exists {
+			continue
+		}
+
+		parentResource, parentExists := cache[resourceData.ParentResource]
+		if !parentExists {
+			l.Error("Parent resource not found for child resource",
+				zap.String("child_resource", resourceData.Name),
+				zap.String("parent_resource", resourceData.ParentResource))
+			continue
+		}
+
+		parentID := &v2.ResourceId{
+			ResourceType: parentResource.Id.ResourceType,
+			Resource:     parentResource.Id.Resource,
+		}
+
+		err := rs.WithParentResourceID(parentID)(resource)
+		if err != nil {
+			l.Error("Failed to set parent resource ID",
+				zap.String("child_resource", resourceData.Name),
+				zap.String("parent_resource", resourceData.ParentResource),
+				zap.Error(err))
+		}
 	}
 
 	l.Info("Built resource cache", zap.Int("count", len(cache)))
@@ -246,10 +283,8 @@ func buildEntitlementCache(ctx context.Context, entitlements []EntitlementData, 
 			continue
 		}
 
-		// Construct the unique key for the cache
 		cacheKey := fmt.Sprintf("%s:%s", resourceName, slug)
 
-		// Check for duplicate entitlement keys
 		if _, exists := cache[cacheKey]; exists {
 			l.Error("Duplicate entitlement key found (resource_name:entitlement)",
 				zap.String("entitlement_key", cacheKey),
@@ -258,7 +293,6 @@ func buildEntitlementCache(ctx context.Context, entitlements []EntitlementData, 
 			continue
 		}
 
-		// Find the parent resource object from the resource cache
 		parentResource, ok := resourceCache[resourceName]
 		if !ok {
 			l.Error("Parent resource for entitlement not found in resource cache",
@@ -266,16 +300,14 @@ func buildEntitlementCache(ctx context.Context, entitlements []EntitlementData, 
 				zap.String("resource_name", resourceName),
 				zap.Int("row_index", i+2),
 			)
-			continue // Skip if we can't find the resource this entitlement belongs to
+			continue
 		}
 
-		// Build the entitlement object (assuming PURPOSE_ASSIGNMENT)
 		entitlementOptions := []entitlement.EntitlementOption{
 			entitlement.WithDisplayName(data.DisplayName),
 			entitlement.WithDescription(data.Description),
 		}
 
-		// Using NewAssignmentEntitlement as default, could be enhanced based on data
 		ent := entitlement.NewAssignmentEntitlement(parentResource, slug, entitlementOptions...)
 
 		cache[cacheKey] = ent

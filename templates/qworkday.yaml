@@ -1,0 +1,192 @@
+# Baton File Connector YAML Template
+# This file demonstrates the structure expected for YAML input.
+# Top-level keys correspond to sheets in the Excel template.
+# Data within each list should match the fields defined in pkg/connector/models.go
+
+users:
+  - name: sarah.johnson
+    display_name: Sarah Johnson
+    email: sarah.johnson@example.com
+    status: active
+    profile:
+      userid: "7a8b9c0d1e"
+      login: sarah_j
+      first_name: Sarah
+      last_name: Johnson
+  - name: michael.chen
+    display_name: Michael Chen
+    email: michael.chen@example.com
+    status: active
+    profile:
+      userid: "2f3g4h5i6j"
+      login: mchen
+      first_name: Michael
+      last_name: Chen
+  - name: ana.lopez
+    display_name: Ana Lopez
+    email: ana.lopez@example.com
+    status: active
+    profile:
+      userid: "7k8l9m0n1o"
+      login: alopez85
+      first_name: Ana
+      last_name: Lopez
+  - name: james.smith
+    display_name: James Smith
+    email: james.smith@example.com
+    status: active
+    profile:
+      userid: "2p3q4r5s6t"
+      login: jsmith
+      first_name: James
+      last_name: Smith
+  - name: kavita.kumar
+    display_name: Kavita Kumar
+    email: kavita.kumar@example.com
+    status: active
+    profile:
+      userid: "7u8v9w0x1y"
+      login: kkumar
+      first_name: Kavita
+      last_name: Kumar
+  - name: ryan.nguyen
+    display_name: Ryan Nguyen
+    email: ryan.nguyen@example.com
+    status: active
+    profile:
+      userid: "2z3a4b5c6d"
+      login: rnguyen
+      first_name: Ryan
+      last_name: Nguyen
+  - name: dana.brown
+    display_name: Dana Brown
+    email: dana.brown@example.com
+    status: active
+    profile:
+      userid: "7e8f9g0h1i"
+      login: dbrown
+      first_name: Dana
+      last_name: Brown
+  - name: thomas.mueller
+    display_name: Thomas Mueller
+    email: thomas.mueller@example.com
+    status: active
+    profile:
+      userid: "2j3k4l5m6n"
+      login: tmueller
+      first_name: Thomas
+      last_name: Mueller
+  - name: lucy.walker
+    display_name: Lucy Walker
+    email: lucy.walker@example.com
+    status: active
+    profile:
+      userid: "7o8p9q0r1s"
+      login: lwalker
+      first_name: Lucy
+      last_name: Walker
+
+resources:
+  - resource_type: Supervisory Organization
+    resource_function: group
+    name: suporg_01
+    display_name: Supervisory Organization 01
+    description: Supervisory Organization 01
+  - resource_type: Supervisory Organization
+    resource_function: group
+    name: suporg_02
+    display_name: Supervisory Organization 02
+    description: Supervisory Organization 02
+  - resource_type: Supervisory Organization
+    resource_function: group
+    name: suporg_03
+    display_name: Supervisory Organization 03
+    description: Supervisory Organization 03
+  - resource_type: Locations
+    resource_function: group
+    name: locations
+    display_name: Locations
+    description: Locations
+
+entitlements:
+  - resource_name: suporg_01
+    entitlement: member
+    display_name: Supervisory Organization 01 member
+    description: Member of Supervisory Organization 01
+  - resource_name: suporg_02
+    entitlement: member
+    display_name: Supervisory Organization 02 member
+    description: Member of Supervisory Organization 02
+  - resource_name: suporg_03
+    entitlement: member
+    display_name: Supervisory Organization 03 member
+    description: Member of Supervisory Organization 03
+  - resource_name: locations
+    entitlement: Seattle
+    display_name: Seattle Location
+    description: Located in Seattle, Washington
+  - resource_name: locations
+    entitlement: Austin
+    display_name: Austin Location
+    description: Located in Austin, Texas
+  - resource_name: locations
+    entitlement: Chicago
+    display_name: Chicago Location
+    description: Located in Chicago, Illinois
+  - resource_name: locations
+    entitlement: Denver
+    display_name: Denver Location
+    description: Located in Denver, Colorado
+  - resource_name: locations
+    entitlement: Miami
+    display_name: Miami Location
+    description: Located in Miami, Florida
+
+grants:
+  # Supervisory Organization 01
+  - principal: sarah.johnson
+    entitlement_id: suporg_01:member
+  - principal: sarah.johnson
+    entitlement_id: locations:seattle
+
+  - principal: michael.chen
+    entitlement_id: suporg_01:member
+  - principal: michael.chen
+    entitlement_id: locations:denver
+
+  - principal: lucy.walker
+    entitlement_id: suporg_01:member
+  - principal: lucy.walker
+    entitlement_id: locations:miami
+
+  # Supervisory Organization 02
+  - principal: james.smith
+    entitlement_id: suporg_02:member
+  - principal: james.smith
+    entitlement_id: locations:chicago
+
+  - principal: kavita.kumar
+    entitlement_id: suporg_02:member
+  - principal: kavita.kumar
+    entitlement_id: locations:austin
+
+  - principal: ana.lopez
+    entitlement_id: suporg_02:member
+  - principal: ana.lopez
+    entitlement_id: locations:miami
+
+  # Supervisory Organization 03
+  - principal: ryan.nguyen
+    entitlement_id: suporg_03:member
+  - principal: ryan.nguyen
+    entitlement_id: locations:austin
+
+  - principal: thomas.mueller
+    entitlement_id: suporg_03:member
+  - principal: thomas.mueller
+    entitlement_id: locations:seattle
+
+  - principal: dana.brown
+    entitlement_id: suporg_03:member
+  - principal: dana.brown
+    entitlement_id: locations:denver

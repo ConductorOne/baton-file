@@ -148,7 +148,11 @@ Detailed instructions and explanations for each file format are available:
 Refer to the detailed instruction files linked above for specific field names and requirements for each format.
 
 1.  **`users`:** Defines all user resources (including service accounts).
+    -   Required Fields: `Name`, `Display Name`
+    -   Optional Fields: `Email`, `Status` (enabled/active, disabled/inactive/suspended), `LastLogin` (string, format `MM/DD/YYYY`), `Type` (human/user/person, service/system/bot/machine), `Profile` (map/object).
 2.  **`resources`:** Defines all non-user resources (groups, roles, apps, etc.) and their Baton trait (`Resource Function`).
+    -   Required Fields: `Resource Type` (string, e.g., "role", "team"), `Resource Function` (string matching keys in `TraitMap`, e.g., "role", "group"), `Name` (unique ID), `Display Name`.
+    -   Optional Fields: `Description`, `Parent Resource` (Name of parent).
 3.  **`entitlements`:** Defines specific permissions, membership types, or role assignments on resources.
 4.  **`grants`:** Defines which principals (users or group/role entitlements) are granted which entitlements.
 

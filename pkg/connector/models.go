@@ -13,7 +13,7 @@ import (
 // The structure provides the context (file path) needed for loading data during sync operations.
 // Instances are created by NewFileConnector.
 type FileConnector struct {
-	inputFilePath string // Path to the input data file (.xlsx, .yaml, .json)
+	inputFilePath string
 }
 
 // LoadedData holds all the data parsed from the input file.
@@ -27,15 +27,16 @@ type LoadedData struct {
 
 // The UserData struct holds raw data corresponding to a row in the 'users' tab.
 // It is defined for parsing data into an intermediary Go representation.
-// It holds fields Name, DisplayName, Email, Status, Type, and a map for dynamic Profile attributes.
+// It holds fields Name, DisplayName, Email, Status, LastLogin (expected format MM/DD/YYYY), Type, and a map for dynamic Profile attributes.
 // The structure represents a single user definition before conversion to an SDK Resource object with a User trait.
 type UserData struct {
 	Name        string                 `yaml:"name" json:"name"`
 	DisplayName string                 `yaml:"display_name" json:"display_name"`
 	Email       string                 `yaml:"email" json:"email"`
 	Status      string                 `yaml:"status" json:"status"`
-	Type        string                 `yaml:"type" json:"type"`       // Expected: "human" or "service" (maps to UserTrait_AccountType)
-	Profile     map[string]interface{} `yaml:"profile" json:"profile"` // For user_profile_* columns / profile map
+	LastLogin   string                 `yaml:"last_login" json:"last_login"` // Expected format MM/DD/YYYY (e.g., 04/01/2025)
+	Type        string                 `yaml:"type" json:"type"`             // Expected: "human" or "service" (maps to UserTrait_AccountType)
+	Profile     map[string]interface{} `yaml:"profile" json:"profile"`       // For user_profile_* columns / profile map
 }
 
 // The ResourceData struct holds raw data corresponding to a row in the 'resources' tab.

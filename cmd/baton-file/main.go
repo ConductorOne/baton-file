@@ -12,14 +12,12 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/field"
 	"github.com/conductorone/baton-sdk/pkg/types"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
-	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
 
 var version = "dev"
 
-// --- Baton Connector Mode Flags ---
 var inputFileField = field.StringField(
 	"input",
 	field.WithDescription("Path to the input file"),
@@ -27,18 +25,13 @@ var inputFileField = field.StringField(
 	field.WithShortHand("i"),
 )
 
-// --- End Baton Connector Mode Flags ---
-
-// ConfigurationFields defines the configuration schema for the connector.
 var ConfigurationFields = []field.SchemaField{
 	inputFileField,
 }
 
-// main is the entry point for the application.
 func main() {
 	ctx := context.Background()
 
-	// Create a new configuration instance with our defined fields.
 	cfg := field.NewConfiguration(ConfigurationFields)
 
 	// Define the CLI configuration using the Baton SDK helper.
@@ -66,28 +59,6 @@ By default (without --client-id and --client-secret flags), it generates a C1Z f
 If authentication flags are provided, it runs as a direct connector.`
 	cmd.Version = version
 
-	// Explicitly allowlist the flags we want to show in --help
-	allowedFlags := map[string]bool{
-		"input":         true,
-		"client-id":     true,
-		"client-secret": true,
-		"help":          true,
-	}
-
-	// Hide flags not in the allowlist
-	cmd.Flags().VisitAll(func(f *pflag.Flag) {
-		if !allowedFlags[f.Name] {
-			f.Hidden = true
-		}
-	})
-	// Hide persistent flags not in allowlist (includes log-level, file, etc.)
-	cmd.PersistentFlags().VisitAll(func(f *pflag.Flag) {
-		if !allowedFlags[f.Name] {
-			f.Hidden = true
-		}
-	})
-
-	// Add requested shorthands for standard flags
 	if pflag := cmd.PersistentFlags().Lookup("client-id"); pflag != nil {
 		pflag.Shorthand = "c"
 	}
@@ -95,11 +66,8 @@ If authentication flags are provided, it runs as a direct connector.`
 		pflag.Shorthand = "s"
 	}
 
-	// Execute the command.
 	err = cmd.Execute()
 	if err != nil {
-		// Error reporting is handled internally by the SDK/Cobra for common cases,
-		// but we catch fatal errors during execution here.
 		fmt.Fprintln(os.Stderr, "Error executing command:", err.Error())
 		os.Exit(1)
 	}
@@ -111,21 +79,17 @@ func getConnector(ctx context.Context, v *viper.Viper) (types.ConnectorServer, e
 	// Extract the logger configured by the SDK's CLI helpers.
 	l := ctxzap.Extract(ctx)
 
-	// Get the input file path from Viper (which reads flags/env vars).
 	inputFile := v.GetString(inputFileField.FieldName)
 	if inputFile == "" {
 		return nil, fmt.Errorf("--input file path is required")
 	}
 
-	// Ensure file exists before creating connector.
 	if _, err := os.Stat(inputFile); os.IsNotExist(err) {
 		return nil, fmt.Errorf("input file not found: %s", inputFile)
 	}
 
-	// Create the core File connector instance, passing the path.
 	fc, err := connector.NewFileConnector(ctx, inputFile)
 	if err != nil {
-		// Handle error from NewFileConnector if any validation added
 		return nil, fmt.Errorf("failed to create file connector: %w", err)
 	}
 

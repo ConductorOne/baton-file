@@ -23,6 +23,7 @@ The connector expects a JSON file containing a single top-level object. This obj
 *   `display_name`: (String, **Required**) The user's full name or display name. *Example: `"Alice Admin"`, `"Data Agent Service Acct"`*
 *   `email`: (String, Optional) The user's primary email address. *Example: `"alice.admin@example.com"`*
 *   `status`: (String, Optional) The user's account status. Common values: `"enabled"`, `"active"`, `"inactive"`, `"disabled"`, `"suspended"`. Defaults to `enabled`. *Example: `"active"`, `"inactive"`*
+*   `last_login`: (String, Optional) The date the user last logged in, in `MM/DD/YYYY` format. *Example: `"04/01/2025"`*
 *   `type`: (String, Optional) The type of user account. Common values: `"human"`, `"user"`, `"person"`, `"service"`, `"system"`, `"bot"`, `"machine"`. Defaults to `human`. *Example: `"human"`, `"service"`*
 *   `profile`: (Object, Optional) An object containing additional user profile attributes. Keys should be strings, values can be strings, numbers, or booleans. *Example: `{ "department": "Engineering", "title": "Software Engineer", "employee_id": 12345 }`*
 
@@ -35,6 +36,7 @@ The connector expects a JSON file containing a single top-level object. This obj
       "display_name": "Dave Developer",
       "email": "dave.developer@example.com",
       "status": "active",
+      "last_login": "04/01/2025",
       "type": "human",
       "profile": {
         "department": "Engineering",

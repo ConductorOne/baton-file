@@ -1,0 +1,15 @@
+maps:
+  - supervisory_organization: Supervisory Organization 01
+    entitlement: member
+    repositories:
+      - repo_01
+
+  - supervisory_organization: Supervisory Organization 02
+    entitlement: member
+    repositories:
+      - repo_02
+
+  - supervisory_organization: Supervisory Organization 03
+    entitlement: member
+    repositories:
+      - repo_03

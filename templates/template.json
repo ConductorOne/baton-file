@@ -5,6 +5,7 @@
       "display_name": "Alice Admin",
       "email": "alice.admin@example.com",
       "status": "active",
+      "last_login": "04/01/2025",
       "type": "",
       "profile": {
         "userid": "1230985496",
@@ -22,6 +23,7 @@
       "display_name": "Dave Developer",
       "email": "dave.developer@example.com",
       "status": "active",
+      "last_login": "04/01/2025",
       "type": "",
       "profile": {
         "userid": "1230985497",
@@ -39,6 +41,7 @@
       "display_name": "Ursula User",
       "email": "ursula.user@example.com",
       "status": "inactive",
+      "last_login": "04/01/2025",
       "type": "",
       "profile": {
         "userid": "1230985498",
@@ -48,7 +51,7 @@
         "department": "QA",
         "title": "QA Analyst",
         "phone_number": "555-123-4569",
-        "hire_date": "2025-01-02"
+        "hire_date": "01/02/2025"
       }
     },
     {
@@ -56,6 +59,7 @@
       "display_name": "Service Account 01",
       "email": "svc.account.01@example.com",
       "status": "active",
+      "last_login": "04/01/2025",
       "type": "service",
       "profile": {
         "userid": "svc-account-01",

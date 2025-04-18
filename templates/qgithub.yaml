@@ -1,0 +1,85 @@
+resources:
+  # Repositories
+  - resource_type: Repository
+    resource_function: group
+    name: repo_01
+    display_name: Repository 01
+    description: Repository 01
+  - resource_type: Repository
+    resource_function: group
+    name: repo_02
+    display_name: Repository 02
+    description: Repository 02
+  - resource_type: Repository
+    resource_function: group
+    name: repo_03
+    display_name: Repository 03
+    description: Repository 03
+
+entitlements:
+  # Repository Entitlements - Repo 01
+  - resource_name: repo_01
+    entitlement: admin
+    display_name: Repository 01 Admin
+    description: Permission to administer the Repository 01
+  - resource_name: repo_01
+    entitlement: pull
+    display_name: Repository 01 Pull
+    description: Permission to read the Repository 01
+  - resource_name: repo_01
+    entitlement: push
+    display_name: Repository 01 Push
+    description: Permission to push to the Repository 01
+
+  # Repository Entitlements - Repo 02
+  - resource_name: repo_02
+    entitlement: admin
+    display_name: Repository 02 Admin
+    description: Permission to administer the Repository 02
+  - resource_name: repo_02
+    entitlement: pull
+    display_name: Repository 02 Pull
+    description: Permission to read the Repository 02
+  - resource_name: repo_02
+    entitlement: push
+    display_name: Repository 02 Push
+    description: Permission to push to the Repository 02
+
+  # Repository Entitlements - Repo 03
+  - resource_name: repo_03
+    entitlement: admin
+    display_name: Repository 03 Admin
+    description: Permission to administer the Repository 03
+  - resource_name: repo_03
+    entitlement: pull
+    display_name: Repository 03 Pull
+    description: Permission to read the Repository 03
+  - resource_name: repo_03
+    entitlement: push
+    display_name: Repository 03 Push
+    description: Permission to push to the Repository 03
+
+grants:
+  # Supervisory Organization 01 grants - has admin access to Web UI and Mobile App repos
+  - principal: suporg_01:manager
+    entitlement_id: repo_01:admin
+  - principal: suporg_01:member
+    entitlement_id: repo_01:pull
+  - principal: suporg_01:member
+    entitlement_id: repo_01:push
+
+  # Supervisory Organization 02 grants - has admin access to API Gateway, User Service, and Payment Service repos
+  - principal: suporg_02:manager
+    entitlement_id: repo_02:admin
+  - principal: suporg_02:manager
+    entitlement_id: repo_02:pull
+  - principal: suporg_02:manager
+    entitlement_id: repo_02:push
+
+  # Supervisory Organization 03 grants - has admin access to Infrastructure and Security Tools repos
+  - principal: suporg_03:manager
+    entitlement_id: repo_03:admin
+  - principal: suporg_03:manager
+    entitlement_id: repo_03:pull
+  - principal: suporg_03:manager
+    entitlement_id: repo_03:push

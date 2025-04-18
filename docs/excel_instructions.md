@@ -27,14 +27,15 @@ The connector expects an `.xlsx` file containing specific sheets (tabs) named `u
 
 *   `Email`: (Text) The user's primary email address. *Example: `alice.admin@example.com`*
 *   `Status`: (Text) The user's account status. Common values: `enabled`, `active`, `inactive`, `disabled`, `suspended`. If omitted or unrecognized, defaults to `enabled`. *Example: `enabled`, `disabled`*
+*   `Last Login`: (Text) The date the user last logged in, in `MM/DD/YYYY` format. *Example: `04/01/2025`*
 *   `Type`: (Text) The type of user account. Common values: `human`, `user`, `person`, `service`, `system`, `bot`, `machine`. If omitted or unrecognized, defaults to `human`. *Example: `human`, `service`*
 *   `Profile: *`: (Text) Any number of additional columns starting *exactly* with the prefix `Profile: ` (note the space). The text *after* this prefix becomes the key (case-sensitive) in the user's profile map in Baton. Values should be text. *Example Headers: `Profile: Department`, `Profile: Title`, `Profile: EmployeeID`*
 
 **Example Row:**
 
-| Name             | Display Name     | Email                      | Status   | Type    | Profile: Department | Profile: Title      |
-| :--------------- | :--------------- | :------------------------- | :------- | :------ | :------------------ | :------------------ |
-| `dave.developer` | `Dave Developer` | `dave.developer@example.com` | `active` | `human` | `Engineering`       | `Software Engineer` |
+| Name             | Display Name     | Email                      | Status   | Last Login | Type    | Profile: Department | Profile: Title      |
+| :--------------- | :--------------- | :------------------------- | :------- |:-----------| :------ | :------------------ | :------------------ |
+| `dave.developer` | `Dave Developer` | `dave.developer@example.com` | `active` | 04/01/2025 | `human` | `Engineering`       | `Software Engineer` |
 
 ### Sheet: `resources`
 

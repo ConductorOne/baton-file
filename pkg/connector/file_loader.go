@@ -42,11 +42,11 @@ func LoadFileData(filePath string) (*LoadedData, error) {
 	ext := strings.ToLower(filepath.Ext(filePath))
 	switch ext {
 	case ".xlsx":
-		return loadExcelData(filePath, nil) 
+		return loadExcelData(filePath, nil)
 	case ".yaml", ".yml":
-		return loadYamlData(filePath) 
+		return loadYamlData(filePath)
 	case ".json":
-		return loadJsonData(filePath) 
+		return loadJsonData(filePath)
 	default:
 		return nil, fmt.Errorf("unsupported file type: '%s' for file: %s", ext, filePath)
 	}
@@ -100,19 +100,17 @@ func loadYamlData(filePath string) (*LoadedData, error) {
 		// Or return an error, depending on requirements
 		// return nil, fmt.Errorf("YAML file %s seems empty or missing required top-level keys (users, resources)", filePath)
 	}
-	
+
 	return &loadedData, nil
 }
 
 // loadExcelData handles the specific logic for reading and parsing .xlsx files.
 func loadExcelData(filePath string, l *zap.Logger) (*LoadedData, error) {
-	// Open the file
 	f, err := excelize.OpenFile(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file %s: %w", filePath, err)
 	}
 	defer func() {
-		// Close the file.
 		if err := f.Close(); err != nil {
 			if l != nil {
 				l.Error("failed to close file", zap.Error(err), zap.String("file", filePath))
@@ -127,13 +125,11 @@ func loadExcelData(filePath string, l *zap.Logger) (*LoadedData, error) {
 		Grants:       make([]GrantData, 0),
 	}
 
-	// Configuration for processing each sheet
 	type sheetConfig struct {
 		headers []string // List of required header names
 		process func(sheetName string, allRows [][]string, headerMap map[string]int) error
 	}
 
-	// Define processing logic for each expected sheet
 	sheetConfigs := map[string]sheetConfig{
 		"users": {
 			headers: []string{"Name", "Display Name"}, // Required base headers
@@ -141,31 +137,29 @@ func loadExcelData(filePath string, l *zap.Logger) (*LoadedData, error) {
 				for i, row := range allRows {
 					if i == 0 {
 						continue
-					} // Skip header row
+					}
 					userData := UserData{
-						// Use safeGet with the provided headerMap
 						Name:        safeGet(row, headerMap, "Name"),
 						DisplayName: safeGet(row, headerMap, "Display Name"),
-						Email:       safeGet(row, headerMap, "Email"),  
-						Status:      safeGet(row, headerMap, "Status"), 
-						Type:        safeGet(row, headerMap, "Type"),   
-						Profile:     make(map[string]interface{}),      
+						Email:       safeGet(row, headerMap, "Email"),
+						Status:      safeGet(row, headerMap, "Status"),
+						Type:        safeGet(row, headerMap, "Type"),
+						Profile:     make(map[string]interface{}),
 					}
 					if userData.Name == "" {
 						if l != nil {
 							l.Warn("Skipping user row due to missing required field(s)", zap.Int("row_index", i+1), zap.Any("row_data", userData))
 						}
 						continue
-					} // Skip rows missing key fields
+					}
 
-					// Dynamically process profile columns
 					for header := range headerMap {
 						if strings.HasPrefix(header, "Profile: ") {
 							profileKey := strings.TrimSpace(strings.TrimPrefix(header, "Profile: "))
 							if profileKey != "" {
 								profileValue := safeGet(row, headerMap, header)
-								if profileValue != "" { // Only add non-empty profile values
-									userData.Profile[strings.ToLower(profileKey)] = profileValue // Standardize key to lowercase
+								if profileValue != "" {
+									userData.Profile[strings.ToLower(profileKey)] = profileValue
 								}
 							}
 						}
@@ -182,22 +176,21 @@ func loadExcelData(filePath string, l *zap.Logger) (*LoadedData, error) {
 				for i, row := range allRows {
 					if i == 0 {
 						continue
-					} // Skip header row
+					}
 					resourceData := ResourceData{
-						// Use safeGet with the provided headerMap
-						ResourceType:     safeGet(row, headerMap, "Resource Type"),     // Updated header
-						ResourceFunction: safeGet(row, headerMap, "Resource Function"), // New header
+						ResourceType:     safeGet(row, headerMap, "Resource Type"),
+						ResourceFunction: safeGet(row, headerMap, "Resource Function"),
 						Name:             safeGet(row, headerMap, "Name"),
 						DisplayName:      safeGet(row, headerMap, "Display Name"),
-						Description:      safeGet(row, headerMap, "Description"),     // Optional header
-						ParentResource:   safeGet(row, headerMap, "Parent Resource"), // Optional header
+						Description:      safeGet(row, headerMap, "Description"),
+						ParentResource:   safeGet(row, headerMap, "Parent Resource"),
 					}
 					if resourceData.Name == "" || resourceData.ResourceType == "" || resourceData.ResourceFunction == "" {
 						if l != nil {
 							l.Warn("Skipping resource row due to missing required field(s)", zap.Int("row_index", i+1), zap.Any("row_data", resourceData))
 						}
 						continue
-					} // Skip rows missing key fields
+					}
 					loadedData.Resources = append(loadedData.Resources, resourceData)
 				}
 				return nil
@@ -209,20 +202,19 @@ func loadExcelData(filePath string, l *zap.Logger) (*LoadedData, error) {
 				for i, row := range allRows {
 					if i == 0 {
 						continue
-					} // Skip header row
+					}
 					entitlementData := EntitlementData{
-						// Use safeGet with the provided headerMap
 						ResourceName: safeGet(row, headerMap, "Resource Name"),
 						Entitlement:  safeGet(row, headerMap, "Entitlement"),
 						DisplayName:  safeGet(row, headerMap, "Entitlement Display Name"),
-						Description:  safeGet(row, headerMap, "Entitlement Description"), // Optional header
+						Description:  safeGet(row, headerMap, "Entitlement Description"),
 					}
 					if entitlementData.ResourceName == "" || entitlementData.Entitlement == "" {
 						if l != nil {
 							l.Warn("Skipping entitlement row due to missing required field(s)", zap.Int("row_index", i+1), zap.Any("row_data", entitlementData))
 						}
 						continue
-					} // Skip rows missing key fields
+					}
 					loadedData.Entitlements = append(loadedData.Entitlements, entitlementData)
 				}
 				return nil
@@ -234,9 +226,8 @@ func loadExcelData(filePath string, l *zap.Logger) (*LoadedData, error) {
 				for i, row := range allRows {
 					if i == 0 {
 						continue
-					} // Skip header row
+					}
 					grantData := GrantData{
-						// Use safeGet with the provided headerMap
 						Principal:     safeGet(row, headerMap, "Principal Receiving Grant"),
 						EntitlementId: safeGet(row, headerMap, "Entitlement Granted to Prinicpal"),
 					}
@@ -245,7 +236,7 @@ func loadExcelData(filePath string, l *zap.Logger) (*LoadedData, error) {
 							l.Warn("Skipping grant row due to missing required field(s)", zap.Int("row_index", i+1), zap.Any("row_data", grantData))
 						}
 						continue
-					} // Skip rows missing key fields
+					}
 					loadedData.Grants = append(loadedData.Grants, grantData)
 				}
 				return nil
@@ -253,7 +244,6 @@ func loadExcelData(filePath string, l *zap.Logger) (*LoadedData, error) {
 		},
 	}
 
-	// Process each configured sheet
 	for sheetName, config := range sheetConfigs {
 		rows, err := f.GetRows(sheetName)
 		if err != nil {
@@ -270,7 +260,6 @@ func loadExcelData(filePath string, l *zap.Logger) (*LoadedData, error) {
 			continue
 		}
 
-		// Build header map for current sheet
 		headers := rows[0]
 		headerMap := make(map[string]int)
 		foundRequired := true
@@ -286,7 +275,6 @@ func loadExcelData(filePath string, l *zap.Logger) (*LoadedData, error) {
 			headerMap[reqHeader] = idx
 		}
 
-		// Also map any optional headers present
 		for idx, h := range headers {
 			if _, required := headerMap[h]; !required {
 				headerMap[h] = idx
@@ -294,13 +282,11 @@ func loadExcelData(filePath string, l *zap.Logger) (*LoadedData, error) {
 		}
 
 		if !foundRequired {
-			continue // Skip processing this sheet if required headers are missing
+			continue
 		}
 
-		// Process rows using the sheet-specific function
 		err = config.process(sheetName, rows, headerMap)
 		if err != nil {
-			// Processing functions currently don't return errors, but handle if they do
 			if l != nil {
 				l.Error("Error processing sheet data", zap.String("sheet", sheetName), zap.Error(err))
 			}
@@ -316,14 +302,4 @@ func loadExcelData(filePath string, l *zap.Logger) (*LoadedData, error) {
 		)
 	}
 	return loadedData, nil
-}
-
-// safeGetFromMap retrieves a value from a row slice using a pre-computed header map.
-func safeGetFromMap(row []string, headerMap map[string]int, columnName string) string {
-	if colIndex, ok := headerMap[columnName]; ok {
-		if colIndex >= 0 && colIndex < len(row) {
-			return strings.TrimSpace(row[colIndex])
-		}
-	}
-	return "" // Return empty string if column doesn't exist or index is invalid
 }

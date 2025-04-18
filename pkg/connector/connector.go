@@ -24,7 +24,6 @@ func (fc *FileConnector) Metadata(ctx context.Context) (*v2.ConnectorMetadata, e
 // Validate validates the connector configuration.
 // The function is required by the connectorbuilder.Connector interface.
 func (fc *FileConnector) Validate(ctx context.Context) (annotations.Annotations, error) {
-	// Check if the file exists and is readable
 	_, err := os.Stat(fc.inputFilePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -32,7 +31,6 @@ func (fc *FileConnector) Validate(ctx context.Context) (annotations.Annotations,
 		}
 		return nil, fmt.Errorf("error accessing input file: %w", err)
 	}
-	// Future: Add validation for required sheets/headers?
 	return nil, nil
 }
 
@@ -43,25 +41,21 @@ func (fc *FileConnector) Validate(ctx context.Context) (annotations.Annotations,
 func (fc *FileConnector) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncer {
 	l := ctxzap.Extract(ctx)
 	l.Info("ResourceSyncers method called", zap.String("input_file_path", fc.inputFilePath))
-
-	// Step 1: Load minimal data just to find resource types
 	loadedData, err := LoadFileData(fc.inputFilePath)
 	if err != nil {
 		l.Error("Failed to load input data file to determine resource types", zap.Error(err))
 		return nil
 	}
 
-	// Step 2: Build resource type cache based on Resource Function column
 	resourceTypesCache, err := buildResourceTypeCache(ctx, loadedData.Resources, loadedData.Users)
 	if err != nil {
 		l.Error("Failed to build resource type cache", zap.Error(err))
 		return nil
 	}
 
-	// Step 3: Create and return syncers, passing only file path
 	rv := make([]connectorbuilder.ResourceSyncer, 0, len(resourceTypesCache))
 	for _, rt := range resourceTypesCache {
-		rv = append(rv, newFileSyncer(ctx, rt, fc.inputFilePath))
+		rv = append(rv, newFileSyncer(rt, fc.inputFilePath))
 	}
 
 	l.Info("Created resource syncers", zap.Int("count", len(rv)))

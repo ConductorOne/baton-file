@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
@@ -20,14 +21,10 @@ import (
 type fileSyncer struct {
 	resourceType  *v2.ResourceType
 	inputFilePath string
-	// Caches are no longer stored here; they are built per-method call.
 }
 
 // newFileSyncer creates a new fileSyncer instance.
-func newFileSyncer(ctx context.Context,
-	rt *v2.ResourceType,
-	filePath string,
-) *fileSyncer {
+func newFileSyncer(rt *v2.ResourceType, filePath string) *fileSyncer {
 	return &fileSyncer{
 		resourceType:  rt,
 		inputFilePath: filePath,
@@ -47,13 +44,11 @@ func (fs *fileSyncer) ResourceType(ctx context.Context) *v2.ResourceType {
 // It implements the List method, required by the connectorbuilder.ResourceSyncer interface.
 // It loads data, builds resource/type caches, filters for the relevant type, and returns paginated results.
 func (fs *fileSyncer) List(ctx context.Context, parentResourceID *v2.ResourceId, pToken *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
-	// 1. Load data for this specific call
 	loadedData, err := LoadFileData(fs.inputFilePath)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("List: failed to load data file: %w", err)
 	}
 
-	// 2. Build necessary caches locally for this call
 	resourceTypesCache, err := buildResourceTypeCache(ctx, loadedData.Resources, loadedData.Users)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("List: failed to build resource type cache: %w", err)
@@ -63,13 +58,11 @@ func (fs *fileSyncer) List(ctx context.Context, parentResourceID *v2.ResourceId,
 		return nil, "", nil, fmt.Errorf("List: failed to build resource cache: %w", err)
 	}
 
-	// 3. Filter resources from the locally built cache
 	matchingResources := make([]*v2.Resource, 0)
 	for _, res := range resourceCache {
 		if res.Id.ResourceType != fs.resourceType.Id {
 			continue
 		}
-		// Apply parent filtering logic
 		if parentResourceID != nil {
 			if res.ParentResourceId == nil || res.ParentResourceId.ResourceType != parentResourceID.ResourceType || res.ParentResourceId.Resource != parentResourceID.Resource {
 				continue
@@ -82,12 +75,11 @@ func (fs *fileSyncer) List(ctx context.Context, parentResourceID *v2.ResourceId,
 		matchingResources = append(matchingResources, res)
 	}
 
-	// 4. Sort and Paginate
 	sort.SliceStable(matchingResources, func(i, j int) bool {
 		return matchingResources[i].Id.Resource < matchingResources[j].Id.Resource
 	})
 
-	pageSize := 50 // Consider making page size configurable?
+	pageSize := 50
 	bag := &pagination.Bag{}
 	err = bag.Unmarshal(pToken.Token)
 	if err != nil {
@@ -114,6 +106,25 @@ func (fs *fileSyncer) List(ctx context.Context, parentResourceID *v2.ResourceId,
 
 	rv := matchingResources[start:end]
 
+	for _, resource := range rv {
+		childTypes := make(map[string]struct{})
+		for _, possibleChild := range loadedData.Resources {
+			if possibleChild.ParentResource == resource.Id.Resource {
+				childTypeId := strings.ToLower(possibleChild.ResourceType)
+				childTypes[childTypeId] = struct{}{}
+			}
+		}
+
+		if len(childTypes) > 0 {
+			annos := annotations.Annotations(resource.Annotations)
+			for childTypeId := range childTypes {
+				childAnno := &v2.ChildResourceType{ResourceTypeId: childTypeId}
+				annos.Append(childAnno)
+			}
+			resource.Annotations = annos
+		}
+	}
+
 	nextPageToken := ""
 	if end < len(matchingResources) {
 		nextPageToken, err = bag.NextToken(strconv.Itoa(end))
@@ -129,13 +140,11 @@ func (fs *fileSyncer) List(ctx context.Context, parentResourceID *v2.ResourceId,
 // It implements the Entitlements method, required by the connectorbuilder.ResourceSyncer interface.
 // It loads data, builds resource/entitlement caches, filters for the relevant resource, and returns paginated results.
 func (fs *fileSyncer) Entitlements(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
-	// 1. Load data for this specific call
 	loadedData, err := LoadFileData(fs.inputFilePath)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("Entitlements: failed to load data file: %w", err)
 	}
 
-	// 2. Build necessary caches locally for this call
 	resourceTypesCache, err := buildResourceTypeCache(ctx, loadedData.Resources, loadedData.Users)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("Entitlements: failed to build resource type cache: %w", err)
@@ -149,7 +158,6 @@ func (fs *fileSyncer) Entitlements(ctx context.Context, resource *v2.Resource, p
 		return nil, "", nil, fmt.Errorf("Entitlements: failed to build entitlement cache: %w", err)
 	}
 
-	// 3. Filter entitlements from the locally built cache
 	matchingEntitlements := make([]*v2.Entitlement, 0)
 	for _, ent := range entitlementCache {
 		if ent.Resource.Id.ResourceType == resource.Id.ResourceType && ent.Resource.Id.Resource == resource.Id.Resource {
@@ -157,7 +165,6 @@ func (fs *fileSyncer) Entitlements(ctx context.Context, resource *v2.Resource, p
 		}
 	}
 
-	// 4. Sort and Paginate
 	sort.SliceStable(matchingEntitlements, func(i, j int) bool {
 		return matchingEntitlements[i].Slug < matchingEntitlements[j].Slug
 	})
@@ -206,13 +213,11 @@ func (fs *fileSyncer) Entitlements(ctx context.Context, resource *v2.Resource, p
 func (fs *fileSyncer) Grants(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
 	l := ctxzap.Extract(ctx)
 
-	// 1. Load data for this specific call
 	loadedData, err := LoadFileData(fs.inputFilePath)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("Grants: failed to load data file: %w", err)
 	}
 
-	// 2. Build necessary caches locally for this call
 	resourceTypesCache, err := buildResourceTypeCache(ctx, loadedData.Resources, loadedData.Users)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("Grants: failed to build resource type cache: %w", err)
@@ -226,14 +231,12 @@ func (fs *fileSyncer) Grants(ctx context.Context, resource *v2.Resource, pToken 
 		return nil, "", nil, fmt.Errorf("Grants: failed to build entitlement cache: %w", err)
 	}
 
-	// 3. Filter grants based on the locally loaded grantData
 	matchingGrants := make([]*v2.Grant, 0)
 
 	for i, grantInfo := range loadedData.Grants {
 		principalIdentifier := grantInfo.Principal
 		entitlementIdentifier := grantInfo.EntitlementId
 
-		// Find the principal resource object
 		var principalResource *v2.Resource
 		if res, ok := resourceCache[principalIdentifier]; ok {
 			principalResource = res
@@ -247,7 +250,6 @@ func (fs *fileSyncer) Grants(ctx context.Context, resource *v2.Resource, pToken 
 		}
 		principalIdProto := principalResource.Id
 
-		// Find target entitlement object from local cache
 		targetEntitlement, ok := entitlementCache[entitlementIdentifier]
 		if !ok {
 			l.Warn("Skipping grant because target entitlement not found in local cache",
@@ -257,7 +259,6 @@ func (fs *fileSyncer) Grants(ctx context.Context, resource *v2.Resource, pToken 
 			continue
 		}
 
-		// Check if this grant corresponds to the resource handled by this syncer's Grants call
 		grantMatchesContext := (principalIdProto.ResourceType == resource.Id.ResourceType && principalIdProto.Resource == resource.Id.Resource) ||
 			(targetEntitlement.Resource.Id.ResourceType == resource.Id.ResourceType && targetEntitlement.Resource.Id.Resource == resource.Id.Resource)
 
@@ -265,7 +266,6 @@ func (fs *fileSyncer) Grants(ctx context.Context, resource *v2.Resource, pToken 
 			continue
 		}
 
-		// Expansion Logic
 		grantOptions := []grant.GrantOption{}
 		principalResourceType, rtOk := resourceTypesCache[principalIdProto.ResourceType]
 		if rtOk {
@@ -285,9 +285,7 @@ func (fs *fileSyncer) Grants(ctx context.Context, resource *v2.Resource, pToken 
 		matchingGrants = append(matchingGrants, newGrant)
 	}
 
-	// 4. Sort and Paginate
 	sort.SliceStable(matchingGrants, func(i, j int) bool {
-		// Sort grants consistently, e.g., by principal ID then entitlement ID
 		if matchingGrants[i].Principal.Id.String() != matchingGrants[j].Principal.Id.String() {
 			return matchingGrants[i].Principal.Id.String() < matchingGrants[j].Principal.Id.String()
 		}

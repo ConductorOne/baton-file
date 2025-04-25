@@ -46,11 +46,10 @@ func buildResourceTypeCache(ctx context.Context, resources []ResourceData, users
 		if traitEnum, ok := TraitMap[traitStringLower]; ok {
 			traits = append(traits, traitEnum)
 		} else {
-			l.Warn("Unrecognized Resource Function for resource type, defaulting to TRAIT_UNSPECIFIED",
+			l.Error("Unrecognized Resource Function for resource type, fix source file",
 				zap.String("resource_type", typeStringLower),
 				zap.String("resource_function", rData.ResourceFunction),
 			)
-			traits = append(traits, v2.ResourceType_TRAIT_UNSPECIFIED) // Default to UNSPECIFIED if not mapped
 		}
 
 		displayName := cases.Title(language.English).String(typeStringLower)

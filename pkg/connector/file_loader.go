@@ -46,15 +46,15 @@ func LoadFileData(filePath string) (*LoadedData, error) {
 	case ".yaml", ".yml":
 		return loadYamlData(filePath)
 	case ".json":
-		return loadJsonData(filePath)
+		return loadJSONData(filePath)
 	default:
 		return nil, fmt.Errorf("unsupported file type: '%s' for file: %s", ext, filePath)
 	}
 }
 
 // JSON Loading Logic
-// loadJsonData handles the specific logic for reading and parsing .json files.
-func loadJsonData(filePath string) (*LoadedData, error) {
+// loadJSONData handles the specific logic for reading and parsing .json files.
+func loadJSONData(filePath string) (*LoadedData, error) {
 	// Read the entire file content
 	jsonData, err := os.ReadFile(filePath)
 	if err != nil {

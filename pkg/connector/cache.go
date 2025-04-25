@@ -198,6 +198,8 @@ func buildResourceCache(ctx context.Context, users []UserData, resources []Resou
 		var resourceOptions []rs.ResourceOption
 		if len(resourceType.Traits) > 0 {
 			switch resourceType.Traits[0] {
+			case v2.ResourceType_TRAIT_UNSPECIFIED:
+				// No trait option needed for unspecified trait
 			case v2.ResourceType_TRAIT_USER:
 				resourceOptions = append(resourceOptions, rs.WithUserTrait())
 			case v2.ResourceType_TRAIT_GROUP:

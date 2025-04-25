@@ -70,8 +70,8 @@ func loadJSONData(filePath string) (*LoadedData, error) {
 		return nil, fmt.Errorf("failed to unmarshal JSON data from %s: %w", filePath, err)
 	}
 
-	if loadedData.Users == nil && loadedData.Resources == nil {
-	}
+	// Check if the required data is present (commenting out empty if statement to fix linter warning)
+	// If validation is required in the future, add appropriate logic here
 
 	return &loadedData, nil
 }
@@ -96,10 +96,8 @@ func loadYamlData(filePath string) (*LoadedData, error) {
 
 	// Basic validation (optional, but good practice)
 	// Example: Check if essential slices are non-nil (they will be empty if the key exists but has no items)
-	if loadedData.Users == nil && loadedData.Resources == nil {
-		// Or return an error, depending on requirements
-		// return nil, fmt.Errorf("YAML file %s seems empty or missing required top-level keys (users, resources)", filePath)
-	}
+	// Commenting out empty if statement to fix linter warning
+	// If validation is required in the future, add appropriate logic here
 
 	return &loadedData, nil
 }

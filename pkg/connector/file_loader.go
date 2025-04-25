@@ -33,11 +33,11 @@ func safeGet(row []string, headerMap map[string]int, headerName string) string {
 	return strings.TrimSpace(row[idx])
 }
 
-// The LoadFileData function reads data from the specified input file (Excel, YAML, or JSON).
+// LoadFileData function reads data from the specified input file (Excel, YAML, or JSON).
 // It is called by syncer methods to load the complete dataset required for processing.
-// The syncer methods require this to get the raw data before building local caches.
+// syncer methods require this to get the raw data before building local caches.
 // Which ensures each sync operation uses data reflecting the file's state at that moment.
-// The implementation detects the file type based on its extension and dispatches to the appropriate parser function.
+// implementation detects the file type based on its extension and dispatches to the appropriate parser function.
 func LoadFileData(filePath string) (*LoadedData, error) {
 	ext := strings.ToLower(filepath.Ext(filePath))
 	switch ext {

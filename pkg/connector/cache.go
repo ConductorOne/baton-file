@@ -15,9 +15,9 @@ import (
 	"golang.org/x/text/language"
 )
 
-// The buildResourceTypeCache function constructs a map of resource type definitions based on the 'Resources' sheet.
+// buildResourceTypeCache function constructs a map of resource type definitions based on the 'Resources' sheet.
 // It is used by the ResourceSyncers method for creating resource type definitions based on data provided in the file.
-// The ResourceSyncers method requires these definitions to understand resource kinds and their associated traits.
+// ResourceSyncers method requires these definitions to understand resource kinds and their associated traits.
 func buildResourceTypeCache(ctx context.Context, resources []ResourceData, users []UserData) (map[string]*v2.ResourceType, error) {
 	l := ctxzap.Extract(ctx)
 	l.Debug("Building resource type cache from Resource Function column")
@@ -80,10 +80,10 @@ var TraitMap = map[string]v2.ResourceType_Trait{
 	"secret": v2.ResourceType_TRAIT_SECRET,
 }
 
-// The buildResourceCache function constructs a map of resource objects from the loaded data.
+// buildResourceCache function constructs a map of resource objects from the loaded data.
 // It is called by syncer methods to create resource instances based on UserData and ResourceData.
-// The SDK requires these v2.Resource objects, including trait annotations, for various operations like listing and grant processing.
-// The implementation processes users (including parsing LastLogin string in MM/DD/YYYY format) and other resources,
+// SDK requires these v2.Resource objects, including trait annotations, for various operations like listing and grant processing.
+// implementation processes users (including parsing LastLogin string in MM/DD/YYYY format) and other resources,
 // uses rs.NewUserResource or rs.NewResource with appropriate rs.WithXxxTrait options, and returns the cache map keyed by resource name/ID.
 func buildResourceCache(ctx context.Context, users []UserData, resources []ResourceData, resourceTypes map[string]*v2.ResourceType) (map[string]*v2.Resource, error) {
 	l := ctxzap.Extract(ctx)
@@ -262,17 +262,17 @@ func buildResourceCache(ctx context.Context, users []UserData, resources []Resou
 	return cache, nil
 }
 
-// The buildEntitlementCache function constructs a map of entitlement definitions from the loaded data.
+// buildEntitlementCache function constructs a map of entitlement definitions from the loaded data.
 // It is called by syncer methods to create entitlement definitions based on EntitlementData.
-// The SDK requires these v2.Entitlement objects for grant processing and representing permissions.
-// The implementation iterates EntitlementData, creates v2.Entitlement objects using SDK helpers, links to parent resources, and returns cache map keyed by composite ID.
+// SDK requires these v2.Entitlement objects for grant processing and representing permissions.
+// implementation iterates EntitlementData, creates v2.Entitlement objects using SDK helpers, links to parent resources, and returns cache map keyed by composite ID.
 func buildEntitlementCache(ctx context.Context, entitlements []EntitlementData, resourceCache map[string]*v2.Resource) (map[string]*v2.Entitlement, error) {
 	l := ctxzap.Extract(ctx)
 	cache := make(map[string]*v2.Entitlement)
 
 	for i, data := range entitlements {
 		resourceName := data.ResourceName
-		slug := data.Entitlement // The 'entitlement' column now acts as the slug
+		slug := data.Entitlement // 'entitlement' column now acts as the slug
 
 		if resourceName == "" {
 			l.Warn("Skipping entitlement entry with empty resource_name", zap.Int("row_index", i+2))

@@ -29,6 +29,20 @@ This connector allows you to model users, groups, roles, applications, and their
 
 ### Installation
 
+#### Brew
+
+```bash
+# Add the ConductorOne tap (if you haven't already)
+brew tap conductorone/baton
+
+# Install Baton and the file connector
+brew install baton conductorone/baton/baton-file
+
+# Verify installation
+baton-file --help
+baton --help
+```
+
 #### Docker
 
 ```bash

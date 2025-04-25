@@ -13,7 +13,7 @@ import (
 )
 
 // Metadata returns the connector's metadata.
-// The function is required by the connectorbuilder.Connector interface.
+// function is required by the connectorbuilder.Connector interface.
 func (fc *FileConnector) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
 	return &v2.ConnectorMetadata{
 		DisplayName: "File Connector",
@@ -22,7 +22,7 @@ func (fc *FileConnector) Metadata(ctx context.Context) (*v2.ConnectorMetadata, e
 }
 
 // Validate validates the connector configuration.
-// The function is required by the connectorbuilder.Connector interface.
+// function is required by the connectorbuilder.Connector interface.
 func (fc *FileConnector) Validate(ctx context.Context) (annotations.Annotations, error) {
 	_, err := os.Stat(fc.inputFilePath)
 	if err != nil {
@@ -35,9 +35,9 @@ func (fc *FileConnector) Validate(ctx context.Context) (annotations.Annotations,
 }
 
 // ResourceSyncers returns a list of syncers for the connector.
-// The function is required by the connectorbuilder.Connector interface.
+// function is required by the connectorbuilder.Connector interface.
 // It determines resource types from the input file and creates a syncer instance for each type, enabling the SDK to sync them.
-// The implementation loads minimal data to find resource types, builds the type cache, and creates simple syncers passing only the file path for per-sync loading.
+// implementation loads minimal data to find resource types, builds the type cache, and creates simple syncers passing only the file path for per-sync loading.
 func (fc *FileConnector) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncer {
 	l := ctxzap.Extract(ctx)
 	l.Info("ResourceSyncers method called", zap.String("input_file_path", fc.inputFilePath))

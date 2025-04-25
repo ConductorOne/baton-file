@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/conductorone/baton-file/pkg/connector"
-
 	"github.com/conductorone/baton-sdk/pkg/config"
 	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
 	"github.com/conductorone/baton-sdk/pkg/field"
@@ -35,7 +34,7 @@ func main() {
 	cfg := field.NewConfiguration(ConfigurationFields)
 
 	// Define the CLI configuration using the Baton SDK helper.
-	// The sets up the command, flags (including defaults like --client-id, --file),
+	// sets up the command, flags (including defaults like --client-id, --file),
 	// environment variable binding, and the main execution logic.
 	_, cmd, err := config.DefineConfiguration(
 		ctx,
@@ -94,7 +93,7 @@ func getConnector(ctx context.Context, v *viper.Viper) (types.ConnectorServer, e
 	}
 
 	// Use the connector builder to create the gRPC server instance.
-	// The wraps our FileConnector.
+	// wraps our FileConnector.
 	c, err := connectorbuilder.NewConnector(ctx, fc)
 	if err != nil {
 		l.Error("Error creating connector server", zap.Error(err))

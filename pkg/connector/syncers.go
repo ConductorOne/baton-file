@@ -31,16 +31,16 @@ func newFileSyncer(rt *v2.ResourceType, filePath string) *fileSyncer {
 	}
 }
 
-// The ResourceType method returns the resource type definition handled by this syncer.
+// ResourceType method returns the resource type definition handled by this syncer.
 // It implements the ResourceType method, required by the connectorbuilder.ResourceSyncer interface.
-// The connectorbuilder.ResourceSyncer interface uses this to associate the syncer with its definition.
+// connectorbuilder.ResourceSyncer interface uses this to associate the syncer with its definition.
 // Which allows the SDK sync engine to know which resource type this syncer manages.
-// The implementation directly returns the stored v2.ResourceType passed during initialization.
+// implementation directly returns the stored v2.ResourceType passed during initialization.
 func (fs *fileSyncer) ResourceType(ctx context.Context) *v2.ResourceType {
 	return fs.resourceType
 }
 
-// The List method retrieves a paginated list of resources for the syncer's type.
+// List method retrieves a paginated list of resources for the syncer's type.
 // It implements the List method, required by the connectorbuilder.ResourceSyncer interface.
 // It loads data, builds resource/type caches, filters for the relevant type, and returns paginated results.
 func (fs *fileSyncer) List(ctx context.Context, parentResourceID *v2.ResourceId, pToken *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
@@ -136,7 +136,7 @@ func (fs *fileSyncer) List(ctx context.Context, parentResourceID *v2.ResourceId,
 	return rv, nextPageToken, nil, nil
 }
 
-// The Entitlements method retrieves a paginated list of entitlements for the syncer's type.
+// Entitlements method retrieves a paginated list of entitlements for the syncer's type.
 // It implements the Entitlements method, required by the connectorbuilder.ResourceSyncer interface.
 // It loads data, builds resource/entitlement caches, filters for the relevant resource, and returns paginated results.
 func (fs *fileSyncer) Entitlements(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
@@ -207,7 +207,7 @@ func (fs *fileSyncer) Entitlements(ctx context.Context, resource *v2.Resource, p
 	return rv, nextPageToken, nil, nil
 }
 
-// The Grants method retrieves a paginated list of grants for the syncer's type.
+// Grants method retrieves a paginated list of grants for the syncer's type.
 // It implements the Grants method, required by the connectorbuilder.ResourceSyncer interface.
 // It loads data, builds all caches, filters grants based on the resource context, and returns paginated results.
 func (fs *fileSyncer) Grants(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {

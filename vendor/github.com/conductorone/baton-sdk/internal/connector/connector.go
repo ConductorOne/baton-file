@@ -35,6 +35,7 @@ const listenerFdEnv = "BATON_CONNECTOR_SERVICE_LISTENER_FD"
 type connectorClient struct {
 	connectorV2.ResourceTypesServiceClient
 	connectorV2.ResourcesServiceClient
+	connectorV2.ResourceGetterServiceClient
 	connectorV2.EntitlementsServiceClient
 	connectorV2.GrantsServiceClient
 	connectorV2.ConnectorServiceClient
@@ -55,13 +56,14 @@ var ErrConnectorNotImplemented = errors.New("client does not implement connector
 type wrapper struct {
 	mtx sync.RWMutex
 
-	server              types.ConnectorServer
-	client              types.ConnectorClient
-	serverStdin         io.WriteCloser
-	conn                *grpc.ClientConn
-	provisioningEnabled bool
-	ticketingEnabled    bool
-	fullSyncDisabled    bool
+	server                  types.ConnectorServer
+	client                  types.ConnectorClient
+	serverStdin             io.WriteCloser
+	conn                    *grpc.ClientConn
+	provisioningEnabled     bool
+	ticketingEnabled        bool
+	fullSyncDisabled        bool
+	targetedSyncResourceIDs []string
 
 	rateLimiter   ratelimitV1.RateLimiterServiceServer
 	rlCfg         *ratelimitV1.RateLimiterConfig
@@ -111,6 +113,13 @@ func WithTicketingEnabled() Option {
 	return func(ctx context.Context, w *wrapper) error {
 		w.ticketingEnabled = true
 
+		return nil
+	}
+}
+
+func WithTargetedSyncResourceIDs(resourceIDs []string) Option {
+	return func(ctx context.Context, w *wrapper) error {
+		w.targetedSyncResourceIDs = resourceIDs
 		return nil
 	}
 }
@@ -294,11 +303,11 @@ func (cw *wrapper) C(ctx context.Context) (types.ConnectorClient, error) {
 	var dialErr error
 	var conn *grpc.ClientConn
 	for {
-		conn, err = grpc.DialContext( //nolint:staticcheck // grpc.DialContext is deprecated but we are using it still.
+		conn, err = grpc.DialContext( //nolint:staticcheck // grpc.DialContext is deprecated but we are using it still for compatibility
 			ctx,
 			fmt.Sprintf("127.0.0.1:%d", listenPort),
 			grpc.WithTransportCredentials(credentials.NewTLS(clientTLSConfig)),
-			grpc.WithBlock(), //nolint:staticcheck // grpc.WithBlock is deprecated but we are using it still.
+			grpc.WithBlock(), //nolint:staticcheck // grpc.WithBlock is deprecated but we are using it still for compatibility
 			grpc.WithChainUnaryInterceptor(ratelimit2.UnaryInterceptor(cw.now, cw.rlDescriptors...)),
 			grpc.WithStatsHandler(otelgrpc.NewClientHandler(
 				otelgrpc.WithPropagators(
@@ -372,6 +381,7 @@ func Register(ctx context.Context, s grpc.ServiceRegistrar, srv types.ConnectorS
 	connectorV2.RegisterResourceTypesServiceServer(s, srv)
 	connectorV2.RegisterAssetServiceServer(s, srv)
 	connectorV2.RegisterEventServiceServer(s, srv)
+	connectorV2.RegisterResourceGetterServiceServer(s, srv)
 
 	if opts.TicketingEnabled {
 		connectorV2.RegisterTicketsServiceServer(s, srv)
@@ -421,5 +431,6 @@ func NewConnectorClient(ctx context.Context, cc grpc.ClientConnInterface) types.
 		EventServiceClient:             connectorV2.NewEventServiceClient(cc),
 		TicketsServiceClient:           connectorV2.NewTicketsServiceClient(cc),
 		ActionServiceClient:            connectorV2.NewActionServiceClient(cc),
+		ResourceGetterServiceClient:    connectorV2.NewResourceGetterServiceClient(cc),
 	}
 }

@@ -49,6 +49,10 @@ func (r *entitlementsTable) Schema() (string, []interface{}) {
 	}
 }
 
+func (r *entitlementsTable) Migrations(ctx context.Context, db *goqu.Database) error {
+	return nil
+}
+
 func (c *C1File) ListEntitlements(ctx context.Context, request *v2.EntitlementsServiceListEntitlementsRequest) (*v2.EntitlementsServiceListEntitlementsResponse, error) {
 	ctx, span := tracer.Start(ctx, "C1File.ListEntitlements")
 	defer span.End()
@@ -68,10 +72,10 @@ func (c *C1File) ListEntitlements(ctx context.Context, request *v2.EntitlementsS
 		ret = append(ret, en)
 	}
 
-	return &v2.EntitlementsServiceListEntitlementsResponse{
+	return v2.EntitlementsServiceListEntitlementsResponse_builder{
 		List:          ret,
 		NextPageToken: nextPageToken,
-	}, nil
+	}.Build(), nil
 }
 
 func (c *C1File) GetEntitlement(ctx context.Context, request *reader_v2.EntitlementsReaderServiceGetEntitlementRequest) (*reader_v2.EntitlementsReaderServiceGetEntitlementResponse, error) {
@@ -81,27 +85,40 @@ func (c *C1File) GetEntitlement(ctx context.Context, request *reader_v2.Entitlem
 	ret := &v2.Entitlement{}
 	syncId, err := annotations.GetSyncIdFromAnnotations(request.GetAnnotations())
 	if err != nil {
-		return nil, fmt.Errorf("error getting sync id from annotations for entitlement '%s': %w", request.EntitlementId, err)
+		return nil, fmt.Errorf("error getting sync id from annotations for entitlement '%s': %w", request.GetEntitlementId(), err)
 	}
-	err = c.getConnectorObject(ctx, entitlements.Name(), request.EntitlementId, syncId, ret)
+	err = c.getConnectorObject(ctx, entitlements.Name(), request.GetEntitlementId(), syncId, ret)
 	if err != nil {
-		return nil, fmt.Errorf("error fetching entitlement '%s': %w", request.EntitlementId, err)
+		return nil, fmt.Errorf("error fetching entitlement '%s': %w", request.GetEntitlementId(), err)
 	}
 
-	return &reader_v2.EntitlementsReaderServiceGetEntitlementResponse{
+	return reader_v2.EntitlementsReaderServiceGetEntitlementResponse_builder{
 		Entitlement: ret,
-	}, nil
+	}.Build(), nil
 }
 
 func (c *C1File) PutEntitlements(ctx context.Context, entitlementObjs ...*v2.Entitlement) error {
 	ctx, span := tracer.Start(ctx, "C1File.PutEntitlements")
 	defer span.End()
 
-	err := bulkPutConnectorObject(ctx, c, entitlements.Name(),
+	return c.putEntitlementsInternal(ctx, bulkPutConnectorObject, entitlementObjs...)
+}
+
+func (c *C1File) PutEntitlementsIfNewer(ctx context.Context, entitlementObjs ...*v2.Entitlement) error {
+	ctx, span := tracer.Start(ctx, "C1File.PutEntitlementsIfNewer")
+	defer span.End()
+
+	return c.putEntitlementsInternal(ctx, bulkPutConnectorObjectIfNewer, entitlementObjs...)
+}
+
+type entitlementPutFunc func(context.Context, *C1File, string, func(m *v2.Entitlement) (goqu.Record, error), ...*v2.Entitlement) error
+
+func (c *C1File) putEntitlementsInternal(ctx context.Context, f entitlementPutFunc, entitlementObjs ...*v2.Entitlement) error {
+	err := f(ctx, c, entitlements.Name(),
 		func(entitlement *v2.Entitlement) (goqu.Record, error) {
 			return goqu.Record{
-				"resource_id":      entitlement.Resource.Id.Resource,
-				"resource_type_id": entitlement.Resource.Id.ResourceType,
+				"resource_id":      entitlement.GetResource().GetId().GetResource(),
+				"resource_type_id": entitlement.GetResource().GetId().GetResourceType(),
 			}, nil
 		},
 		entitlementObjs...,

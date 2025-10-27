@@ -10,12 +10,60 @@ import (
 	"strings"
 
 	"github.com/conductorone/baton-sdk/pkg/cli"
+	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
 	"github.com/conductorone/baton-sdk/pkg/connectorrunner"
 	"github.com/conductorone/baton-sdk/pkg/field"
+	"github.com/conductorone/baton-sdk/pkg/types"
+	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.uber.org/zap"
 )
 
+func RunConnector[T field.Configurable](
+	ctx context.Context,
+	connectorName string,
+	version string,
+	schema field.Configuration,
+	cf cli.NewConnector[T],
+	options ...connectorrunner.Option,
+) {
+	f := func(ctx context.Context, cfg T, runTimeOpts cli.RunTimeOpts) (types.ConnectorServer, error) {
+		l := ctxzap.Extract(ctx)
+		connector, builderOpts, err := cf(ctx, cfg, &cli.ConnectorOpts{})
+		if err != nil {
+			return nil, err
+		}
+
+		builderOpts = append(builderOpts, connectorbuilder.WithSessionStore(runTimeOpts.SessionStore))
+
+		c, err := connectorbuilder.NewConnector(ctx, connector, builderOpts...)
+		if err != nil {
+			l.Error("error creating connector", zap.Error(err))
+			return nil, err
+		}
+		return c, nil
+	}
+
+	_, cmd, err := DefineConfigurationV2(ctx, connectorName, f, schema, options...)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+		return
+	}
+
+	cmd.Version = version
+
+	err = cmd.Execute()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	}
+}
+
+// GetConnectorFunc is a function type that creates a connector instance.
+// It takes a context and configuration. The session cache constructor is retrieved from the context.
+// deprecated - prefer RunConnector.
 func DefineConfiguration[T field.Configurable](
 	ctx context.Context,
 	connectorName string,
@@ -23,10 +71,27 @@ func DefineConfiguration[T field.Configurable](
 	schema field.Configuration,
 	options ...connectorrunner.Option,
 ) (*viper.Viper, *cobra.Command, error) {
+	f := func(ctx context.Context, cfg T, runTimeOpts cli.RunTimeOpts) (types.ConnectorServer, error) {
+		connector, err := connector(ctx, cfg)
+		if err != nil {
+			return nil, err
+		}
+		return connector, nil
+	}
+	return DefineConfigurationV2(ctx, connectorName, f, schema, options...)
+}
+
+// deprecated - prefer RunConnector.
+func DefineConfigurationV2[T field.Configurable](
+	ctx context.Context,
+	connectorName string,
+	connector cli.GetConnectorFunc2[T],
+	schema field.Configuration,
+	options ...connectorrunner.Option,
+) (*viper.Viper, *cobra.Command, error) {
 	if err := verifyStructFields[T](schema); err != nil {
 		return nil, nil, fmt.Errorf("VerifyStructFields failed: %w", err)
 	}
-
 	v := viper.New()
 	v.SetConfigType("yaml")
 
@@ -51,6 +116,12 @@ func DefineConfiguration[T field.Configurable](
 	// Ensure unique fields
 	uniqueFields := make(map[string]field.SchemaField)
 	for _, f := range confschema.Fields {
+		if s, ok := uniqueFields[f.FieldName]; ok {
+			if !f.WasReExported && !s.WasReExported {
+				return nil, nil, fmt.Errorf("multiple fields with the same name: %s.If you want to use a default field in the SDK, use ExportAs on the connector schema field", f.FieldName)
+			}
+		}
+
 		uniqueFields[f.FieldName] = f
 	}
 	confschema.Fields = make([]field.SchemaField, 0, len(uniqueFields))
@@ -66,14 +137,13 @@ func DefineConfiguration[T field.Configurable](
 		SilenceUsage:  true,
 		RunE:          cli.MakeMainCommand(ctx, connectorName, v, confschema, connector, options...),
 	}
-	// set persistent flags only on the main subcommand
-	err = cli.SetFlagsAndConstraints(mainCMD, field.NewConfiguration(field.DefaultFields, field.DefaultRelationships...))
-	if err != nil {
-		return nil, nil, err
-	}
 
-	// set the rest of flags
-	err = cli.SetFlagsAndConstraints(mainCMD, schema)
+	relationships := []field.SchemaFieldRelationship{}
+	// set persistent flags only on the main subcommand
+	relationships = append(relationships, field.DefaultRelationships...)
+	relationships = append(relationships, confschema.Constraints...)
+
+	err = cli.SetFlagsAndConstraints(mainCMD, field.NewConfiguration(confschema.Fields, field.WithConstraints(relationships...)))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -135,7 +205,7 @@ func verifyStructFields[T field.Configurable](schema field.Configuration) error 
 		configType = configType.Elem()
 	}
 	if configType.Kind() != reflect.Struct {
-		return fmt.Errorf("T must be a struct type, got %v", configType.Kind())
+		return fmt.Errorf("T must be a struct type, got %v", configType.Kind()) //nolint:staticcheck // we want to capital letter here
 	}
 	for _, field := range schema.Fields {
 		fieldFound := false

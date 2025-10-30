@@ -4,36 +4,35 @@ jobs:
   go-lint:
     runs-on: ubuntu-latest
     steps:
-      - name: Install Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: 1.22.x
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+      - name: Install Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
       - name: Run linters
-        uses: golangci/golangci-lint-action@v5
+        uses: golangci/golangci-lint-action@v8
         with:
           version: latest
           args: --timeout=3m
   go-test:
     strategy:
       matrix:
-        go-version: [1.22.x]
         platform: [ubuntu-latest]
     runs-on: ${{ matrix.platform }}
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
       - name: Install Go
         if: success()
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: ${{ matrix.go-version }}
-      - name: Checkout code
-        uses: actions/checkout@v4
+          go-version-file: go.mod
       - name: go tests
         run: (set -o pipefail && go test -v -covermode=count -json ./... | tee test.json)
       - name: annotate go tests
         if: always()
-        uses: guyarb/golang-test-annotations@v0.5.1
+        uses: guyarb/golang-test-annotations@v0.8.0
         with:
           test-results: test.json
 
@@ -54,17 +53,17 @@ jobs:
       # BATON_ACCESS_TOKEN: 'secret_token'
       # The following parameters are passed to grant/revoke commands
       # Change these to the correct IDs for your test data
-      CONNECTOR_GRANT: 'grant:entitlement:group:1234:member:user:9876'
-      CONNECTOR_ENTITLEMENT: 'entitlement:group:1234:member'
-      CONNECTOR_PRINCIPAL: 'user:9876'
-      CONNECTOR_PRINCIPAL_TYPE: 'user'
+      CONNECTOR_GRANT: "grant:entitlement:group:1234:member:user:9876"
+      CONNECTOR_ENTITLEMENT: "entitlement:group:1234:member"
+      CONNECTOR_PRINCIPAL: "user:9876"
+      CONNECTOR_PRINCIPAL_TYPE: "user"
     steps:
-      - name: Install Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: 1.22.x
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+      - name: Install Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
       # Install any dependencies here (or delete this)
       # - name: Install postgres client
       #   run: sudo apt install postgresql-client
@@ -83,9 +82,7 @@ jobs:
 
       - name: Check for grant before revoking
 
-        run:
-          baton grants --entitlement="${{ env.CONNECTOR_ENTITLEMENT }}" --output-format=json | jq --exit-status ".grants[].principal.id.resource == \"${{ env.CONNECTOR_PRINCIPAL }}\""
-
+        run: baton grants --entitlement="${{ env.CONNECTOR_ENTITLEMENT }}" --output-format=json | jq --exit-status ".grants[].principal.id.resource == \"${{ env.CONNECTOR_PRINCIPAL }}\""
 
       - name: Revoke grants
         run: ./baton-file --revoke-grant="${{ env.CONNECTOR_GRANT }}"
@@ -99,6 +96,4 @@ jobs:
 
       - name: Check grant was re-granted
 
-        run:
-          baton grants --entitlement="${{ env.CONNECTOR_ENTITLEMENT }}" --output-format=json | jq --exit-status ".grants[].principal.id.resource == \"${{ env.CONNECTOR_PRINCIPAL }}\""
-
+        run: baton grants --entitlement="${{ env.CONNECTOR_ENTITLEMENT }}" --output-format=json | jq --exit-status ".grants[].principal.id.resource == \"${{ env.CONNECTOR_PRINCIPAL }}\""

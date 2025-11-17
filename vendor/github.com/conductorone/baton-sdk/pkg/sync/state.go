@@ -19,6 +19,7 @@ type State interface {
 	ResourceTypeID(ctx context.Context) string
 	ResourceID(ctx context.Context) string
 	EntitlementGraph(ctx context.Context) *expand.EntitlementGraph
+	ClearEntitlementGraph(ctx context.Context)
 	ParentResourceID(ctx context.Context) string
 	ParentResourceTypeID(ctx context.Context) string
 	PageToken(ctx context.Context) string
@@ -225,6 +226,7 @@ func (st *state) Unmarshal(input string) error {
 		st.actions = token.Actions
 		st.currentAction = token.CurrentAction
 		st.needsExpansion = token.NeedsExpansion
+		st.entitlementGraph = token.EntitlementGraph
 		st.hasExternalResourceGrants = token.HasExternalResourceGrants
 		st.shouldSkipEntitlementsAndGrants = token.ShouldSkipEntitlementsAndGrants
 		st.shouldSkipGrants = token.ShouldSkipGrants
@@ -368,6 +370,11 @@ func (st *state) EntitlementGraph(ctx context.Context) *expand.EntitlementGraph 
 		st.entitlementGraph = expand.NewEntitlementGraph(ctx)
 	}
 	return st.entitlementGraph
+}
+
+// ClearEntitlementGraph clears the entitlement graph. This is meant to make the final sync token less confusing.
+func (st *state) ClearEntitlementGraph(ctx context.Context) {
+	st.entitlementGraph = nil
 }
 
 func (st *state) ParentResourceID(ctx context.Context) string {

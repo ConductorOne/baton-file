@@ -273,7 +273,10 @@ func (cw *wrapper) runServer(ctx context.Context, serverCred *tlsV1.Credential) 
 		cw.SessionServer = server
 		go func() {
 			defer sessionListenerFile.Close()
-			serverErr := session.StartGRPCSessionServerWithOptions(ctx, sessionListener, server, grpc.Creds(credentials.NewTLS(tlsConfig)))
+			serverErr := session.StartGRPCSessionServerWithOptions(ctx, sessionListener, server,
+				grpc.Creds(credentials.NewTLS(tlsConfig)),
+				grpc.ChainUnaryInterceptor(ugrpc.UnaryServerInterceptor(ctx)...),
+			)
 			if serverErr != nil {
 				l.Error("failed to create session store server", zap.Error(serverErr))
 				return

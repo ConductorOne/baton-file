@@ -306,6 +306,7 @@ func (b *builder) Cleanup(ctx context.Context, request *v2.ConnectorServiceClean
 	if b.sessionStore != nil {
 		// Limit c1z size before we upload, because the uploads time out...
 		//  TODO(kans): we could hold onto the session store if we are in debug mode.
+		//  TODO(kans): we should probably not do this for lambda connectors.
 		err := b.sessionStore.Clear(ctx, sessions.WithSyncID(request.GetActiveSyncId()))
 		if err != nil {
 			l.Warn("error clearing session store", zap.Error(err))
@@ -357,9 +358,18 @@ func (b *builder) getCapabilities(ctx context.Context) (*v2.ConnectorCapabilitie
 			connectorCaps[cap] = struct{}{}
 		}
 
+		r := rb.ResourceType(ctx)
+		annos := annotations.Annotations(r.Annotations)
+		p := &v2.CapabilityPermissions{}
+		_, err := annos.Pick(p)
+		if err != nil {
+			return nil, err
+		}
+
 		resourceTypeCapabilities = append(resourceTypeCapabilities, v2.ResourceTypeCapability_builder{
 			ResourceType: rb.ResourceType(ctx),
 			Capabilities: caps,
+			Permissions:  p,
 		}.Build())
 	}
 

@@ -25,6 +25,7 @@ import (
 	connectorwrapperV1 "github.com/conductorone/baton-sdk/pb/c1/connector_wrapper/v1"
 	ratelimitV1 "github.com/conductorone/baton-sdk/pb/c1/ratelimit/v1"
 	tlsV1 "github.com/conductorone/baton-sdk/pb/c1/utls/v1"
+	"github.com/conductorone/baton-sdk/pkg/bid"
 	ratelimit2 "github.com/conductorone/baton-sdk/pkg/ratelimit"
 	"github.com/conductorone/baton-sdk/pkg/session"
 	"github.com/conductorone/baton-sdk/pkg/types"
@@ -81,16 +82,16 @@ var ErrConnectorNotImplemented = errors.New("client does not implement connector
 type wrapper struct {
 	mtx sync.RWMutex
 
-	server                  types.ConnectorServer
-	client                  types.ConnectorClient
-	serverStdin             io.WriteCloser
-	conn                    *grpc.ClientConn
-	provisioningEnabled     bool
-	ticketingEnabled        bool
-	fullSyncDisabled        bool
-	targetedSyncResourceIDs []string
-	sessionStoreEnabled     bool
-	syncResourceTypeIDs     []string
+	server                types.ConnectorServer
+	client                types.ConnectorClient
+	serverStdin           io.WriteCloser
+	conn                  *grpc.ClientConn
+	provisioningEnabled   bool
+	ticketingEnabled      bool
+	fullSyncDisabled      bool
+	targetedSyncResources []*connectorV2.Resource
+	sessionStoreEnabled   bool
+	syncResourceTypeIDs   []string
 
 	rateLimiter   ratelimitV1.RateLimiterServiceServer
 	rlCfg         *ratelimitV1.RateLimiterConfig
@@ -153,9 +154,17 @@ func WithTicketingEnabled() Option {
 	}
 }
 
-func WithTargetedSyncResourceIDs(resourceIDs []string) Option {
+func WithTargetedSyncResources(resourceIDs []string) Option {
 	return func(ctx context.Context, w *wrapper) error {
-		w.targetedSyncResourceIDs = resourceIDs
+		resources := make([]*connectorV2.Resource, 0, len(resourceIDs))
+		for _, resourceId := range resourceIDs {
+			r, err := bid.ParseResourceBid(resourceId)
+			if err != nil {
+				return err
+			}
+			resources = append(resources, r)
+		}
+		w.targetedSyncResources = resources
 		return nil
 	}
 }
@@ -273,7 +282,10 @@ func (cw *wrapper) runServer(ctx context.Context, serverCred *tlsV1.Credential) 
 		cw.SessionServer = server
 		go func() {
 			defer sessionListenerFile.Close()
-			serverErr := session.StartGRPCSessionServerWithOptions(ctx, sessionListener, server, grpc.Creds(credentials.NewTLS(tlsConfig)))
+			serverErr := session.StartGRPCSessionServerWithOptions(ctx, sessionListener, server,
+				grpc.Creds(credentials.NewTLS(tlsConfig)),
+				grpc.ChainUnaryInterceptor(ugrpc.UnaryServerInterceptor(ctx)...),
+			)
 			if serverErr != nil {
 				l.Error("failed to create session store server", zap.Error(serverErr))
 				return

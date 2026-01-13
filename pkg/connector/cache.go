@@ -317,3 +317,34 @@ func buildEntitlementCache(ctx context.Context, entitlements []EntitlementData, 
 	l.Info("Built entitlement cache", zap.Int("count", len(cache)))
 	return cache, nil
 }
+
+// buildChildTypesIndex creates an index mapping parent resource IDs to their child resource types.
+// This eliminates the need to scan all resources when checking for child types in the List method.
+func buildChildTypesIndex(ctx context.Context, resourceData []ResourceData, resourceCache map[string]*v2.Resource) map[string]map[string]struct{} {
+	l := ctxzap.Extract(ctx)
+	index := make(map[string]map[string]struct{})
+
+	for _, rData := range resourceData {
+		if rData.ParentResource == "" {
+			continue
+		}
+
+		// Check if parent exists in the cache
+		if _, exists := resourceCache[rData.ParentResource]; !exists {
+			continue
+		}
+
+		childTypeId := strings.ToLower(rData.ResourceType)
+
+		// Initialize the set for this parent if it doesn't exist
+		if index[rData.ParentResource] == nil {
+			index[rData.ParentResource] = make(map[string]struct{})
+		}
+
+		// Add the child type to the parent's set
+		index[rData.ParentResource][childTypeId] = struct{}{}
+	}
+
+	l.Debug("Built child types index", zap.Int("parents_with_children", len(index)))
+	return index
+}

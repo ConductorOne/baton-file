@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
-	"strings"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
@@ -44,7 +43,7 @@ func (fs *fileSyncer) ResourceType(ctx context.Context) *v2.ResourceType {
 // It implements the List method, required by the connectorbuilder.ResourceSyncer interface.
 // It uses cached data from the connector, filters for the relevant type, and returns paginated results.
 func (fs *fileSyncer) List(ctx context.Context, parentResourceID *v2.ResourceId, pToken *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
-	loadedData, _, resourceCache, _, err := fs.connector.getCachedData(ctx)
+	_, _, resourceCache, _, childTypesIndex, err := fs.connector.getCachedData(ctx)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("List: %w", err)
 	}
@@ -97,16 +96,9 @@ func (fs *fileSyncer) List(ctx context.Context, parentResourceID *v2.ResourceId,
 
 	rv := matchingResources[start:end]
 
+	// Use prebuilt child types index for O(1) lookups instead of scanning all resources
 	for _, resource := range rv {
-		childTypes := make(map[string]struct{})
-		for _, possibleChild := range loadedData.Resources {
-			if possibleChild.ParentResource == resource.Id.Resource {
-				childTypeId := strings.ToLower(possibleChild.ResourceType)
-				childTypes[childTypeId] = struct{}{}
-			}
-		}
-
-		if len(childTypes) > 0 {
+		if childTypes, exists := childTypesIndex[resource.Id.Resource]; exists && len(childTypes) > 0 {
 			annos := annotations.Annotations(resource.Annotations)
 			for childTypeId := range childTypes {
 				childAnno := &v2.ChildResourceType{ResourceTypeId: childTypeId}
@@ -131,7 +123,7 @@ func (fs *fileSyncer) List(ctx context.Context, parentResourceID *v2.ResourceId,
 // It implements the Entitlements method, required by the connectorbuilder.ResourceSyncer interface.
 // It uses cached data from the connector, filters for the relevant resource, and returns paginated results.
 func (fs *fileSyncer) Entitlements(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
-	_, _, _, entitlementCache, err := fs.connector.getCachedData(ctx)
+	_, _, _, entitlementCache, _, err := fs.connector.getCachedData(ctx)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("Entitlements: %w", err)
 	}
@@ -191,7 +183,7 @@ func (fs *fileSyncer) Entitlements(ctx context.Context, resource *v2.Resource, p
 func (fs *fileSyncer) Grants(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
 	l := ctxzap.Extract(ctx)
 
-	loadedData, resourceTypesCache, resourceCache, entitlementCache, err := fs.connector.getCachedData(ctx)
+	loadedData, resourceTypesCache, resourceCache, entitlementCache, _, err := fs.connector.getCachedData(ctx)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("Grants: %w", err)
 	}

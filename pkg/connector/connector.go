@@ -36,7 +36,7 @@ func (fc *FileConnector) Validate(ctx context.Context) (annotations.Annotations,
 
 // getCachedData returns cached file data and built caches, loading them if not already cached.
 // This method is thread-safe and ensures the file is only loaded and processed once.
-func (fc *FileConnector) getCachedData(ctx context.Context) (*LoadedData, map[string]*v2.ResourceType, map[string]*v2.Resource, map[string]*v2.Entitlement, error) {
+func (fc *FileConnector) getCachedData(ctx context.Context) (*LoadedData, map[string]*v2.ResourceType, map[string]*v2.Resource, map[string]*v2.Entitlement, map[string]map[string]struct{}, error) {
 	l := ctxzap.Extract(ctx)
 
 	// Fast path: check if cache is already populated using read lock
@@ -46,8 +46,9 @@ func (fc *FileConnector) getCachedData(ctx context.Context) (*LoadedData, map[st
 		resourceTypes := fc.cachedResourceTypes
 		resources := fc.cachedResources
 		entitlements := fc.cachedEntitlements
+		childTypes := fc.cachedChildTypes
 		fc.cacheMutex.RUnlock()
-		return loadedData, resourceTypes, resources, entitlements, nil
+		return loadedData, resourceTypes, resources, entitlements, childTypes, nil
 	}
 	fc.cacheMutex.RUnlock()
 
@@ -57,7 +58,7 @@ func (fc *FileConnector) getCachedData(ctx context.Context) (*LoadedData, map[st
 
 	// Double-check after acquiring write lock (another goroutine may have loaded it)
 	if fc.cachedData != nil {
-		return fc.cachedData, fc.cachedResourceTypes, fc.cachedResources, fc.cachedEntitlements, nil
+		return fc.cachedData, fc.cachedResourceTypes, fc.cachedResources, fc.cachedEntitlements, fc.cachedChildTypes, nil
 	}
 
 	l.Info("Loading and caching file data", zap.String("input_file_path", fc.inputFilePath))
@@ -65,30 +66,34 @@ func (fc *FileConnector) getCachedData(ctx context.Context) (*LoadedData, map[st
 	// Load file data
 	loadedData, err := LoadFileData(fc.inputFilePath)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("failed to load data file: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to load data file: %w", err)
 	}
 
 	// Build all caches
 	resourceTypesCache, err := buildResourceTypeCache(ctx, loadedData.Resources, loadedData.Users)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("failed to build resource type cache: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to build resource type cache: %w", err)
 	}
 
 	resourceCache, err := buildResourceCache(ctx, loadedData.Users, loadedData.Resources, resourceTypesCache)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("failed to build resource cache: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to build resource cache: %w", err)
 	}
 
 	entitlementCache, err := buildEntitlementCache(ctx, loadedData.Entitlements, resourceCache)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("failed to build entitlement cache: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to build entitlement cache: %w", err)
 	}
+
+	// Build child types index to optimize child type lookups
+	childTypesIndex := buildChildTypesIndex(ctx, loadedData.Resources, resourceCache)
 
 	// Store in cache
 	fc.cachedData = loadedData
 	fc.cachedResourceTypes = resourceTypesCache
 	fc.cachedResources = resourceCache
 	fc.cachedEntitlements = entitlementCache
+	fc.cachedChildTypes = childTypesIndex
 
 	l.Info("Successfully cached file data",
 		zap.Int("users", len(loadedData.Users)),
@@ -96,7 +101,7 @@ func (fc *FileConnector) getCachedData(ctx context.Context) (*LoadedData, map[st
 		zap.Int("entitlements", len(loadedData.Entitlements)),
 		zap.Int("grants", len(loadedData.Grants)))
 
-	return loadedData, resourceTypesCache, resourceCache, entitlementCache, nil
+	return loadedData, resourceTypesCache, resourceCache, entitlementCache, childTypesIndex, nil
 }
 
 // ResourceSyncers returns a list of syncers for the connector.
@@ -107,7 +112,7 @@ func (fc *FileConnector) ResourceSyncers(ctx context.Context) []connectorbuilder
 	l := ctxzap.Extract(ctx)
 	l.Info("ResourceSyncers method called", zap.String("input_file_path", fc.inputFilePath))
 
-	_, resourceTypesCache, _, _, err := fc.getCachedData(ctx)
+	_, resourceTypesCache, _, _, _, err := fc.getCachedData(ctx)
 	if err != nil {
 		l.Error("Failed to load and cache data", zap.Error(err))
 		return nil

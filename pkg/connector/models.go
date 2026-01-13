@@ -25,6 +25,9 @@ type FileConnector struct {
 	cachedResources     map[string]*v2.Resource
 	cachedEntitlements  map[string]*v2.Entitlement
 	cachedChildTypes    map[string]map[string]struct{} // parent resource ID -> set of child resource type IDs
+	// Pre-sorted indexes to eliminate sorting on every page request
+	cachedSortedResourcesByType   map[string][]*v2.Resource    // resource type ID -> sorted list of resources
+	cachedSortedEntitlementsByRes map[string][]*v2.Entitlement // resource ID -> sorted list of entitlements
 }
 
 // LoadedData holds all the data parsed from the input file.

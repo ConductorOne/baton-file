@@ -41,33 +41,40 @@ func (fs *fileSyncer) ResourceType(ctx context.Context) *v2.ResourceType {
 
 // List method retrieves a paginated list of resources for the syncer's type.
 // It implements the List method, required by the connectorbuilder.ResourceSyncer interface.
-// It uses cached data from the connector, filters for the relevant type, and returns paginated results.
+// It uses pre-sorted cached data from the connector and returns paginated results.
 func (fs *fileSyncer) List(ctx context.Context, parentResourceID *v2.ResourceId, pToken *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
-	_, _, resourceCache, _, childTypesIndex, err := fs.connector.getCachedData(ctx)
+	_, _, _, _, childTypesIndex, err := fs.connector.getCachedData(ctx)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("List: %w", err)
 	}
 
-	matchingResources := make([]*v2.Resource, 0)
-	for _, res := range resourceCache {
-		if res.Id.ResourceType != fs.resourceType.Id {
-			continue
-		}
-		if parentResourceID != nil {
-			if res.ParentResourceId == nil || res.ParentResourceId.ResourceType != parentResourceID.ResourceType || res.ParentResourceId.Resource != parentResourceID.Resource {
-				continue
-			}
-		} else {
-			if res.ParentResourceId != nil {
-				continue
-			}
-		}
-		matchingResources = append(matchingResources, res)
-	}
+	// Get pre-sorted resources for this type (already filtered and sorted during cache building)
+	fs.connector.cacheMutex.RLock()
+	sortedResources := fs.connector.cachedSortedResourcesByType[fs.resourceType.Id]
+	fs.connector.cacheMutex.RUnlock()
 
-	sort.SliceStable(matchingResources, func(i, j int) bool {
-		return matchingResources[i].Id.Resource < matchingResources[j].Id.Resource
-	})
+	// Filter by parent if needed
+	var matchingResources []*v2.Resource
+	if parentResourceID != nil {
+		// Need to filter by parent
+		matchingResources = make([]*v2.Resource, 0)
+		for _, res := range sortedResources {
+			if res.ParentResourceId != nil &&
+				res.ParentResourceId.ResourceType == parentResourceID.ResourceType &&
+				res.ParentResourceId.Resource == parentResourceID.Resource {
+				matchingResources = append(matchingResources, res)
+			}
+		}
+	} else {
+		// Only top-level resources (no parent)
+		matchingResources = make([]*v2.Resource, 0)
+		for _, res := range sortedResources {
+			if res.ParentResourceId == nil {
+				matchingResources = append(matchingResources, res)
+			}
+		}
+	}
+	// No sorting needed - already sorted in the cached index
 
 	pageSize := 50
 	bag := &pagination.Bag{}
@@ -121,23 +128,22 @@ func (fs *fileSyncer) List(ctx context.Context, parentResourceID *v2.ResourceId,
 
 // Entitlements method retrieves a paginated list of entitlements for the syncer's type.
 // It implements the Entitlements method, required by the connectorbuilder.ResourceSyncer interface.
-// It uses cached data from the connector, filters for the relevant resource, and returns paginated results.
+// It uses pre-sorted cached data from the connector and returns paginated results.
 func (fs *fileSyncer) Entitlements(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
-	_, _, _, entitlementCache, _, err := fs.connector.getCachedData(ctx)
+	_, _, _, _, _, err := fs.connector.getCachedData(ctx)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("Entitlements: %w", err)
 	}
 
-	matchingEntitlements := make([]*v2.Entitlement, 0)
-	for _, ent := range entitlementCache {
-		if ent.Resource.Id.ResourceType == resource.Id.ResourceType && ent.Resource.Id.Resource == resource.Id.Resource {
-			matchingEntitlements = append(matchingEntitlements, ent)
-		}
-	}
+	// Get pre-sorted entitlements for this resource (already filtered and sorted during cache building)
+	fs.connector.cacheMutex.RLock()
+	matchingEntitlements := fs.connector.cachedSortedEntitlementsByRes[resource.Id.Resource]
+	fs.connector.cacheMutex.RUnlock()
 
-	sort.SliceStable(matchingEntitlements, func(i, j int) bool {
-		return matchingEntitlements[i].Slug < matchingEntitlements[j].Slug
-	})
+	// matchingEntitlements is already sorted, no need to sort again
+	if matchingEntitlements == nil {
+		matchingEntitlements = []*v2.Entitlement{} // Return empty list if no entitlements for this resource
+	}
 
 	pageSize := 50
 	bag := &pagination.Bag{}

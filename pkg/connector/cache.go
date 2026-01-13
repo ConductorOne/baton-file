@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -346,5 +347,59 @@ func buildChildTypesIndex(ctx context.Context, resourceData []ResourceData, reso
 	}
 
 	l.Debug("Built child types index", zap.Int("parents_with_children", len(index)))
+	return index
+}
+
+// buildSortedResourcesByType creates pre-sorted lists of resources grouped by type.
+// This eliminates the need to filter and sort on every pagination request.
+func buildSortedResourcesByType(ctx context.Context, resourceCache map[string]*v2.Resource) map[string][]*v2.Resource {
+	l := ctxzap.Extract(ctx)
+	index := make(map[string][]*v2.Resource)
+
+	// Group resources by type
+	for _, res := range resourceCache {
+		typeId := res.Id.ResourceType
+		index[typeId] = append(index[typeId], res)
+	}
+
+	// Sort each type's list
+	totalResources := 0
+	for _, resources := range index {
+		sort.SliceStable(resources, func(i, j int) bool {
+			return resources[i].Id.Resource < resources[j].Id.Resource
+		})
+		totalResources += len(resources)
+	}
+
+	l.Debug("Built sorted resources by type index",
+		zap.Int("resource_types", len(index)),
+		zap.Int("total_resources", totalResources))
+	return index
+}
+
+// buildSortedEntitlementsByResource creates pre-sorted lists of entitlements grouped by resource.
+// This eliminates the need to filter and sort on every pagination request.
+func buildSortedEntitlementsByResource(ctx context.Context, entitlementCache map[string]*v2.Entitlement) map[string][]*v2.Entitlement {
+	l := ctxzap.Extract(ctx)
+	index := make(map[string][]*v2.Entitlement)
+
+	// Group entitlements by resource
+	for _, ent := range entitlementCache {
+		resourceId := ent.Resource.Id.Resource
+		index[resourceId] = append(index[resourceId], ent)
+	}
+
+	// Sort each resource's entitlement list
+	totalEntitlements := 0
+	for _, entitlements := range index {
+		sort.SliceStable(entitlements, func(i, j int) bool {
+			return entitlements[i].Slug < entitlements[j].Slug
+		})
+		totalEntitlements += len(entitlements)
+	}
+
+	l.Debug("Built sorted entitlements by resource index",
+		zap.Int("resources_with_entitlements", len(index)),
+		zap.Int("total_entitlements", totalEntitlements))
 	return index
 }

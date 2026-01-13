@@ -88,12 +88,18 @@ func (fc *FileConnector) getCachedData(ctx context.Context) (*LoadedData, map[st
 	// Build child types index to optimize child type lookups
 	childTypesIndex := buildChildTypesIndex(ctx, loadedData.Resources, resourceCache)
 
+	// Build sorted indexes to eliminate sorting on every pagination request
+	sortedResourcesByType := buildSortedResourcesByType(ctx, resourceCache)
+	sortedEntitlementsByResource := buildSortedEntitlementsByResource(ctx, entitlementCache)
+
 	// Store in cache
 	fc.cachedData = loadedData
 	fc.cachedResourceTypes = resourceTypesCache
 	fc.cachedResources = resourceCache
 	fc.cachedEntitlements = entitlementCache
 	fc.cachedChildTypes = childTypesIndex
+	fc.cachedSortedResourcesByType = sortedResourcesByType
+	fc.cachedSortedEntitlementsByRes = sortedEntitlementsByResource
 
 	l.Info("Successfully cached file data",
 		zap.Int("users", len(loadedData.Users)),

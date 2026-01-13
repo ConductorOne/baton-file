@@ -14,6 +14,13 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	// defaultPageSize is the number of items returned per pagination request.
+	// Increased from 50 to 200 for better performance since all data is in-memory
+	// and already pre-sorted/filtered during cache building.
+	defaultPageSize = 200
+)
+
 // fileSyncer implements the ResourceSyncer interface for a specific resource type.
 // It holds a reference to the resource type it handles and the parent FileConnector.
 // Data loading and caching is performed once by the connector and reused across all syncer calls.
@@ -76,7 +83,7 @@ func (fs *fileSyncer) List(ctx context.Context, parentResourceID *v2.ResourceId,
 	}
 	// No sorting needed - already sorted in the cached index
 
-	pageSize := 50
+	pageSize := defaultPageSize
 	bag := &pagination.Bag{}
 	err = bag.Unmarshal(pToken.Token)
 	if err != nil {
@@ -145,7 +152,7 @@ func (fs *fileSyncer) Entitlements(ctx context.Context, resource *v2.Resource, p
 		matchingEntitlements = []*v2.Entitlement{} // Return empty list if no entitlements for this resource
 	}
 
-	pageSize := 50
+	pageSize := defaultPageSize
 	bag := &pagination.Bag{}
 	err = bag.Unmarshal(pToken.Token)
 	if err != nil {
@@ -255,7 +262,7 @@ func (fs *fileSyncer) Grants(ctx context.Context, resource *v2.Resource, pToken 
 		return matchingGrants[i].Entitlement.Id < matchingGrants[j].Entitlement.Id
 	})
 
-	pageSize := 50
+	pageSize := defaultPageSize
 	bag := &pagination.Bag{}
 	err = bag.Unmarshal(pToken.Token)
 	if err != nil {

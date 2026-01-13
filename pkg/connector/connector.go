@@ -34,8 +34,24 @@ func (fc *FileConnector) Validate(ctx context.Context) (annotations.Annotations,
 	return nil, nil
 }
 
+// clearCache invalidates all cached data, forcing a fresh load on the next getCachedData call.
+// This is called at the start of each sync operation to ensure fresh data between syncs.
+func (fc *FileConnector) clearCache() {
+	fc.cacheMutex.Lock()
+	defer fc.cacheMutex.Unlock()
+
+	fc.cachedData = nil
+	fc.cachedResourceTypes = nil
+	fc.cachedResources = nil
+	fc.cachedEntitlements = nil
+	fc.cachedChildTypes = nil
+	fc.cachedSortedResourcesByType = nil
+	fc.cachedSortedEntitlementsByRes = nil
+}
+
 // getCachedData returns cached file data and built caches, loading them if not already cached.
-// This method is thread-safe and ensures the file is only loaded and processed once.
+// This method is thread-safe and ensures the file is only loaded and processed once per sync.
+// Cache is cleared between syncs via clearCache() to pick up file changes.
 func (fc *FileConnector) getCachedData(ctx context.Context) (*LoadedData, map[string]*v2.ResourceType, map[string]*v2.Resource, map[string]*v2.Entitlement, map[string]map[string]struct{}, error) {
 	l := ctxzap.Extract(ctx)
 
@@ -114,9 +130,13 @@ func (fc *FileConnector) getCachedData(ctx context.Context) (*LoadedData, map[st
 // function is required by the connectorbuilder.Connector interface.
 // It determines resource types from the input file and creates a syncer instance for each type, enabling the SDK to sync them.
 // implementation loads minimal data to find resource types, builds the type cache, and creates simple syncers passing the connector reference.
+// Cache is cleared at the start of each sync to ensure fresh data between syncs.
 func (fc *FileConnector) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncer {
 	l := ctxzap.Extract(ctx)
 	l.Info("ResourceSyncers method called", zap.String("input_file_path", fc.inputFilePath))
+
+	// Clear cache at the start of each sync operation to pick up file changes
+	fc.clearCache()
 
 	_, resourceTypesCache, _, _, _, err := fc.getCachedData(ctx)
 	if err != nil {

@@ -16,18 +16,18 @@ import (
 )
 
 // fileSyncer implements the ResourceSyncer interface for a specific resource type.
-// It holds a reference to the resource type it handles and the path to the data file.
-// Data loading and caching is performed within each interface method call (List, Entitlements, Grants).
+// It holds a reference to the resource type it handles and the parent FileConnector.
+// Data loading and caching is performed once by the connector and reused across all syncer calls.
 type fileSyncer struct {
-	resourceType  *v2.ResourceType
-	inputFilePath string
+	resourceType *v2.ResourceType
+	connector    *FileConnector
 }
 
 // newFileSyncer creates a new fileSyncer instance.
-func newFileSyncer(rt *v2.ResourceType, filePath string) *fileSyncer {
+func newFileSyncer(rt *v2.ResourceType, connector *FileConnector) *fileSyncer {
 	return &fileSyncer{
-		resourceType:  rt,
-		inputFilePath: filePath,
+		resourceType: rt,
+		connector:    connector,
 	}
 }
 
@@ -42,20 +42,11 @@ func (fs *fileSyncer) ResourceType(ctx context.Context) *v2.ResourceType {
 
 // List method retrieves a paginated list of resources for the syncer's type.
 // It implements the List method, required by the connectorbuilder.ResourceSyncer interface.
-// It loads data, builds resource/type caches, filters for the relevant type, and returns paginated results.
+// It uses cached data from the connector, filters for the relevant type, and returns paginated results.
 func (fs *fileSyncer) List(ctx context.Context, parentResourceID *v2.ResourceId, pToken *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
-	loadedData, err := LoadFileData(fs.inputFilePath)
+	loadedData, _, resourceCache, _, err := fs.connector.getCachedData(ctx)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("List: failed to load data file: %w", err)
-	}
-
-	resourceTypesCache, err := buildResourceTypeCache(ctx, loadedData.Resources, loadedData.Users)
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("List: failed to build resource type cache: %w", err)
-	}
-	resourceCache, err := buildResourceCache(ctx, loadedData.Users, loadedData.Resources, resourceTypesCache)
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("List: failed to build resource cache: %w", err)
+		return nil, "", nil, fmt.Errorf("List: %w", err)
 	}
 
 	matchingResources := make([]*v2.Resource, 0)
@@ -138,24 +129,11 @@ func (fs *fileSyncer) List(ctx context.Context, parentResourceID *v2.ResourceId,
 
 // Entitlements method retrieves a paginated list of entitlements for the syncer's type.
 // It implements the Entitlements method, required by the connectorbuilder.ResourceSyncer interface.
-// It loads data, builds resource/entitlement caches, filters for the relevant resource, and returns paginated results.
+// It uses cached data from the connector, filters for the relevant resource, and returns paginated results.
 func (fs *fileSyncer) Entitlements(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
-	loadedData, err := LoadFileData(fs.inputFilePath)
+	_, _, _, entitlementCache, err := fs.connector.getCachedData(ctx)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("Entitlements: failed to load data file: %w", err)
-	}
-
-	resourceTypesCache, err := buildResourceTypeCache(ctx, loadedData.Resources, loadedData.Users)
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("Entitlements: failed to build resource type cache: %w", err)
-	}
-	resourceCache, err := buildResourceCache(ctx, loadedData.Users, loadedData.Resources, resourceTypesCache)
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("Entitlements: failed to build resource cache: %w", err)
-	}
-	entitlementCache, err := buildEntitlementCache(ctx, loadedData.Entitlements, resourceCache)
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("Entitlements: failed to build entitlement cache: %w", err)
+		return nil, "", nil, fmt.Errorf("Entitlements: %w", err)
 	}
 
 	matchingEntitlements := make([]*v2.Entitlement, 0)
@@ -209,26 +187,13 @@ func (fs *fileSyncer) Entitlements(ctx context.Context, resource *v2.Resource, p
 
 // Grants method retrieves a paginated list of grants for the syncer's type.
 // It implements the Grants method, required by the connectorbuilder.ResourceSyncer interface.
-// It loads data, builds all caches, filters grants based on the resource context, and returns paginated results.
+// It uses cached data from the connector, filters grants based on the resource context, and returns paginated results.
 func (fs *fileSyncer) Grants(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
 	l := ctxzap.Extract(ctx)
 
-	loadedData, err := LoadFileData(fs.inputFilePath)
+	loadedData, resourceTypesCache, resourceCache, entitlementCache, err := fs.connector.getCachedData(ctx)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("Grants: failed to load data file: %w", err)
-	}
-
-	resourceTypesCache, err := buildResourceTypeCache(ctx, loadedData.Resources, loadedData.Users)
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("Grants: failed to build resource type cache: %w", err)
-	}
-	resourceCache, err := buildResourceCache(ctx, loadedData.Users, loadedData.Resources, resourceTypesCache)
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("Grants: failed to build resource cache: %w", err)
-	}
-	entitlementCache, err := buildEntitlementCache(ctx, loadedData.Entitlements, resourceCache)
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("Grants: failed to build entitlement cache: %w", err)
+		return nil, "", nil, fmt.Errorf("Grants: %w", err)
 	}
 
 	matchingGrants := make([]*v2.Grant, 0)

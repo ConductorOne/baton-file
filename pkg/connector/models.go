@@ -5,15 +5,25 @@ package connector
 import (
 	"context"
 	"fmt"
+	"sync"
+
+	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 )
 
 // FileConnector struct is the main implementation of the Baton connector for file processing.
 // It is required by the connectorbuilder.Connector interface for defining connector behavior.
-// It holds the path to the input data file.
-// structure provides the context (file path) needed for loading data during sync operations.
+// It holds the path to the input data file and caches loaded data to avoid redundant file reads.
+// The file is treated as static during a sync operation - cache is built once and reused.
 // Instances are created by NewFileConnector.
 type FileConnector struct {
 	inputFilePath string
+
+	// Cache fields to avoid redundant file loading and cache rebuilding
+	cacheMutex          sync.RWMutex
+	cachedData          *LoadedData
+	cachedResourceTypes map[string]*v2.ResourceType
+	cachedResources     map[string]*v2.Resource
+	cachedEntitlements  map[string]*v2.Entitlement
 }
 
 // LoadedData holds all the data parsed from the input file.

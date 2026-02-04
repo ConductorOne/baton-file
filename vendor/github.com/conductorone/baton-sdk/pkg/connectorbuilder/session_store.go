@@ -21,12 +21,13 @@ func WithSyncId(ss sessions.SessionStore, syncID string) sessions.SessionStore {
 		syncID: syncID,
 	}
 }
+
 func (w *SessionStoreWithSyncID) Get(ctx context.Context, key string, opt ...sessions.SessionStoreOption) ([]byte, bool, error) {
 	opts := append([]sessions.SessionStoreOption{sessions.WithSyncID(w.syncID)}, opt...)
 	return w.ss.Get(ctx, key, opts...)
 }
 
-func (w *SessionStoreWithSyncID) GetMany(ctx context.Context, keys []string, opt ...sessions.SessionStoreOption) (map[string][]byte, error) {
+func (w *SessionStoreWithSyncID) GetMany(ctx context.Context, keys []string, opt ...sessions.SessionStoreOption) (map[string][]byte, []string, error) {
 	opts := append([]sessions.SessionStoreOption{sessions.WithSyncID(w.syncID)}, opt...)
 	return w.ss.GetMany(ctx, keys, opts...)
 }

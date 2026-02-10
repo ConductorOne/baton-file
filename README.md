@@ -1,6 +1,6 @@
 ![Baton Logo](./baton-logo.png)
 
-# `baton-file` [![Go Reference](https://pkg.go.dev/badge/github.com/conductorone/baton-file.svg)](https://pkg.go.dev/github.com/conductorone/baton-file) ![main ci](https://github.com/conductorone/baton-file/actions/workflows/main.yaml/badge.svg)
+# `baton-file` [![Go Reference](https://pkg.go.dev/badge/github.com/conductorone/baton-file.svg)](https://pkg.go.dev/github.com/conductorone/baton-file) ![verify](https://github.com/conductorone/baton-file/actions/workflows/verify.yaml/badge.svg)
 
 `baton-file` is a connector built using the [Baton SDK](https://github.com/conductorone/baton-sdk).
 

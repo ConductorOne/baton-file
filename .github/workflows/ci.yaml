@@ -1,0 +1,30 @@
+name: ci
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+  push:
+    branches:
+      - main
+jobs:
+  test:
+    if: false  # Remove this line to enable integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Checkout code
+        uses: actions/checkout@v6
+      # Build the connector binary, then run sync-test.
+      # Configure with valid entitlement/principal IDs.
+      # Add additional test jobs as needed.
+      - name: Build baton-file
+        run: go build ./cmd/baton-file
+      - name: Test connector syncing
+        uses: ConductorOne/github-workflows/actions/sync-test@v4
+        with:
+          connector: ./baton-file
+          baton-entitlement: '<entitlement-id>'
+          baton-principal: '<principal-id>'
+          baton-principal-type: 'user'

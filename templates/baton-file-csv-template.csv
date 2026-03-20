@@ -1,19 +1,19 @@
 record_type,id,display_name,email,status,type,last_login,login,login_aliases,employee_id,additional_emails,mfa_enabled,sso_enabled,status_details,profile.department,profile.title,resource_type,trait,description,parent_resource,created_at,expires_at,created_by,identity,resource_id,entitlement_slug,principal_id,principal_resource_id,principal_entitlement_slug,inherited_resource_id,inherited_entitlement_slug,inheritance_depth,profile.region,profile.slack_channel,profile.level,profile.language
-user,jane.smith,Jane Smith,jane.smith@example.com,enabled,human,2025-03-15T10:30:00Z,jsmith,"jane.s,jsmith01",EMP-4821,j.smith@example.org,true,true,Active since 2021,Engineering,Senior Software Engineer
-user,john.doe,John Doe,john.doe@example.com,disabled,service,,,,"EMP-1137,CONTRACTOR-502",,false,,,Platform
-user,maria.garcia,Maria Garcia,maria.garcia@example.com,active
-resource,acme-org,Acme Corp,,,,,,,,,,,,,,organization,group,Top-level organization,,,,,,,,,,,,,,us-east-1
-resource,engineering,Engineering,,,,,,,,,,,,,,team,group,,acme-org,,,,,,,,,,,,,,#eng-general
-resource,platform-admin,Platform Admin,,,,,,,,,,,,,,role,role,Full administrative access to platform resources,,,,,,,,,,,,,,,,3
+user,jane.smith,Jane Smith,jane.smith@example.com,enabled,human,2025-03-15T10:30:00Z,jsmith,"jane.s,jsmith01",EMP-4821,j.smith@example.org,true,true,Active since 2021,Engineering,Senior Software Engineer,,,,,,,,,,,,,,,,,,,,
+user,john.doe,John Doe,john.doe@example.com,disabled,service,,,,"EMP-1137,CONTRACTOR-502",,false,,,Platform,,,,,,,,,,,,,,,,,,,,,
+user,maria.garcia,Maria Garcia,maria.garcia@example.com,active,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+resource,acme-org,Acme Corp,,,,,,,,,,,,,,organization,group,Top-level organization,,,,,,,,,,,,,,us-east-1,,,
+resource,engineering,Engineering,,,,,,,,,,,,,,team,group,,acme-org,,,,,,,,,,,,,,#eng-general,,
+resource,platform-admin,Platform Admin,,,,,,,,,,,,,,role,role,Full administrative access to platform resources,,,,,,,,,,,,,,,,3,
 resource,api-service,api-service,,,,,,,,,,,,,,repository,app,,acme-org,,,,,,,,,,,,,,,,Go
-resource,deploy-token-1,Production Deploy Token,,,,,,,,,,,,,,api_key,secret,CI/CD deployment credential for api-service,api-service,2025-01-10T00:00:00Z,2026-01-10T00:00:00Z,user:jane.smith,repository:api-service
-entitlement,,Team Member,,,,,,,,,,,,,,,,Member of the engineering team,,,,,,engineering,member
-entitlement,,Role Assigned,,,,,,,,,,,,,,,,Assigned the platform admin role,,,,,,platform-admin,assigned
-entitlement,,Read Access,,,,,,,,,,,,,,,,Read access to the api-service repository,,,,,,api-service,read
-entitlement,,Write Access,,,,,,,,,,,,,,,,Write access to the api-service repository,,,,,,api-service,write
-direct_user_grant,,,,,,,,,,,,,,,,,,,,,,,,engineering,member,jane.smith
-direct_user_grant,,,,,,,,,,,,,,,,,,,,,,,,engineering,member,john.doe
-direct_user_grant,,,,,,,,,,,,,,,,,,,,,,,,platform-admin,assigned,jane.smith
-direct_user_grant,,,,,,,,,,,,,,,,,,,,,,,,api-service,read,maria.garcia
-grant_inheritance_mapping,,,,,,,,,,,,,,,,,,,,,,,,,,,engineering,member,api-service,read,full
-grant_inheritance_mapping,,,,,,,,,,,,,,,,,,,,,,,,,,,engineering,member,platform-admin,assigned,shallow
+resource,deploy-token-1,Production Deploy Token,,,,,,,,,,,,,,api_key,secret,CI/CD deployment credential for api-service,api-service,2025-01-10T00:00:00Z,2026-01-10T00:00:00Z,user:jane.smith,repository:api-service,,,,,,,,,,,,
+entitlement,,Team Member,,,,,,,,,,,,,,,,Member of the engineering team,,,,,,engineering,member,,,,,,,,,,
+entitlement,,Role Assigned,,,,,,,,,,,,,,,,Assigned the platform admin role,,,,,,platform-admin,assigned,,,,,,,,,,
+entitlement,,Read Access,,,,,,,,,,,,,,,,Read access to the api-service repository,,,,,,api-service,read,,,,,,,,,,
+entitlement,,Write Access,,,,,,,,,,,,,,,,Write access to the api-service repository,,,,,,api-service,write,,,,,,,,,,
+direct_user_grant,,,,,,,,,,,,,,,,,,,,,,,,engineering,member,jane.smith,,,,,,,,,
+direct_user_grant,,,,,,,,,,,,,,,,,,,,,,,,engineering,member,john.doe,,,,,,,,,
+direct_user_grant,,,,,,,,,,,,,,,,,,,,,,,,platform-admin,assigned,jane.smith,,,,,,,,,
+direct_user_grant,,,,,,,,,,,,,,,,,,,,,,,,api-service,read,maria.garcia,,,,,,,,,
+grant_inheritance_mapping,,,,,,,,,,,,,,,,,,,,,,,,,,,engineering,member,api-service,read,full,,,,
+grant_inheritance_mapping,,,,,,,,,,,,,,,,,,,,,,,,,,,engineering,member,platform-admin,assigned,shallow,,,,

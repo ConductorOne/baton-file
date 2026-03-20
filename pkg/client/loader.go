@@ -25,6 +25,8 @@ func LoadFileData(filePath string) (*LoadedData, error) {
 	}
 }
 
+const userTypeName = "user"
+
 var deprecatedFieldMappings = map[string]map[string]string{
 	"users": {
 		"name": "id",
@@ -43,7 +45,7 @@ var deprecatedFieldMappings = map[string]map[string]string{
 // resources. IDs must be globally unique because grants and parent references
 // resolve by raw ID — a collision would silently drop data.
 func ValidateUniqueIDs(data *LoadedData) error {
-	seen := make(map[string]string) // id → "user" or resource_type
+	seen := make(map[string]string) // id → userTypeName or resource_type
 	for _, u := range data.Users {
 		if u.ID == "" {
 			continue
@@ -53,10 +55,10 @@ func ValidateUniqueIDs(data *LoadedData) error {
 				"baton-file: duplicate ID %q — found in both %q and %q. "+
 					"IDs must be unique across all users and resources. "+
 					"Change one of them to a different value",
-				u.ID, existing, "user",
+				u.ID, existing, userTypeName,
 			)
 		}
-		seen[u.ID] = "user"
+		seen[u.ID] = userTypeName
 	}
 	for _, r := range data.Resources {
 		if r.ID == "" {

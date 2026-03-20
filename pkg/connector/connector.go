@@ -60,6 +60,15 @@ func (fc *FileConnector) Validate(ctx context.Context) (annotations.Annotations,
 	if err != nil {
 		return nil, fmt.Errorf("baton-file: input file is invalid: %w", err)
 	}
+
+	if err := client.ValidateUniqueIDs(data); err != nil {
+		return nil, err
+	}
+
+	if err := client.ValidateTraits(data); err != nil {
+		return nil, err
+	}
+
 	fc.validatedData = data
 
 	return nil, nil

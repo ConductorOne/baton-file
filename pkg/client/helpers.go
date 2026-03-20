@@ -62,11 +62,11 @@ func ParseTime(value string) (*time.Time, error) {
 	}
 
 	if i, err := strconv.ParseInt(value, 10, 64); err == nil {
-		if i > 0 && i < 4102444800 {
+		if i > 0 && i <= 4102444800 {
 			t := time.Unix(i, 0)
 			return &t, nil
 		}
-		if i > 1000000000000 && i < 4102444800000 {
+		if i > 1000000000000 && i <= 4102444800000 {
 			t := time.Unix(i/1000, (i%1000)*1000000)
 			return &t, nil
 		}

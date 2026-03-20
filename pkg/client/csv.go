@@ -81,7 +81,7 @@ func loadCSVData(filePath string) (*LoadedData, error) {
 			continue
 		}
 
-		switch recordType {
+		switch strings.ToLower(recordType) {
 		case "user":
 			data.Users = append(data.Users, UserData{
 				ID:               csvGet(row, "id"),

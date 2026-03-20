@@ -25,6 +25,8 @@ func (b *resourceBuilder) ResourceType(ctx context.Context) *v2.ResourceType {
 
 func (b *resourceBuilder) List(ctx context.Context, parentResourceID *v2.ResourceId,
 	opts rs.SyncOpAttrs) ([]*v2.Resource, *rs.SyncOpResults, error) {
+	// Full scan is fine — resource types are single-digit and total resources
+	// are at most low thousands for a file-based connector.
 	var rv []*v2.Resource
 	for _, res := range b.cache.resources {
 		if res.GetId().GetResourceType() != b.resourceType.GetId() {
@@ -137,8 +139,10 @@ func (b *resourceBuilder) Grants(ctx context.Context, resource *v2.Resource,
 	sort.SliceStable(allGrants, func(i, j int) bool {
 		pi := allGrants[i].GetPrincipal().GetId()
 		pj := allGrants[j].GetPrincipal().GetId()
-		if pi.String() != pj.String() {
-			return pi.String() < pj.String()
+		ki := pi.GetResourceType() + "/" + pi.GetResource()
+		kj := pj.GetResourceType() + "/" + pj.GetResource()
+		if ki != kj {
+			return ki < kj
 		}
 		return allGrants[i].GetEntitlement().GetId() < allGrants[j].GetEntitlement().GetId()
 	})

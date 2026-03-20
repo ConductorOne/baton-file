@@ -53,6 +53,46 @@ func TestValidateLoadedData_ValidData(t *testing.T) {
 	}
 }
 
+func TestValidateUniqueIDs_DuplicateUserIDs(t *testing.T) {
+	data := &LoadedData{
+		Users: []UserData{
+			{ID: "admin", DisplayName: "Admin One"},
+			{ID: "admin", DisplayName: "Admin Two"},
+		},
+	}
+	err := ValidateUniqueIDs(data)
+	if err == nil {
+		t.Fatal("expected error for duplicate user IDs")
+	}
+	if !strings.Contains(err.Error(), "admin") {
+		t.Errorf("expected 'admin' in error: %s", err.Error())
+	}
+}
+
+func TestValidateUniqueIDs_UserResourceCollision(t *testing.T) {
+	data := &LoadedData{
+		Users:     []UserData{{ID: "admin", DisplayName: "Admin User"}},
+		Resources: []ResourceData{{ID: "admin", ResourceType: "role", Trait: "role", DisplayName: "Admin Role"}},
+	}
+	err := ValidateUniqueIDs(data)
+	if err == nil {
+		t.Fatal("expected error for user/resource ID collision")
+	}
+	if !strings.Contains(err.Error(), "admin") || !strings.Contains(err.Error(), "user") || !strings.Contains(err.Error(), "role") {
+		t.Errorf("expected collision details in error: %s", err.Error())
+	}
+}
+
+func TestValidateUniqueIDs_NoDuplicates(t *testing.T) {
+	data := &LoadedData{
+		Users:     []UserData{{ID: "alice"}, {ID: "bob"}},
+		Resources: []ResourceData{{ID: "team", ResourceType: "team", Trait: "group"}},
+	}
+	if err := ValidateUniqueIDs(data); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestLoadFileData_UnsupportedExtension(t *testing.T) {
 	tmpFile := t.TempDir() + "/data.txt"
 	if err := os.WriteFile(tmpFile, []byte("hello"), 0o600); err != nil {

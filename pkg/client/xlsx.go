@@ -116,10 +116,10 @@ func loadExcelData(filePath string) (*LoadedData, error) {
 				continue
 			}
 
-		// XLSX profile columns use "Profile: <key>" (colon-space) to match
-		// the Title Case convention of XLSX headers. CSV uses "profile.<key>".
-		for header := range headerMap {
-			if strings.HasPrefix(header, "profile: ") {
+			// XLSX profile columns use "Profile: <key>" (colon-space) to match
+			// the Title Case convention of XLSX headers. CSV uses "profile.<key>".
+			for header := range headerMap {
+				if strings.HasPrefix(header, "profile: ") {
 					profileKey := strings.TrimSpace(strings.TrimPrefix(header, "profile: "))
 					if profileKey != "" {
 						profileValue := safeGet(row, headerMap, header)

@@ -102,6 +102,28 @@ func ValidateTraits(data *LoadedData) error {
 	return nil
 }
 
+// ValidateEntitlementFields checks that every entitlement has the required
+// resource_id and entitlement_slug fields populated.
+func ValidateEntitlementFields(data *LoadedData) error {
+	for i, e := range data.Entitlements {
+		if e.ResourceID == "" {
+			return fmt.Errorf(
+				"baton-file: entitlement #%d is missing required field \"resource_id\". "+
+					"Every entitlement must reference the resource it belongs to",
+				i+1,
+			)
+		}
+		if e.EntitlementSlug == "" {
+			return fmt.Errorf(
+				"baton-file: entitlement #%d (resource_id %q) is missing required field \"entitlement_slug\". "+
+					"Every entitlement must have a unique slug (e.g., \"member\", \"admin\")",
+				i+1, e.ResourceID,
+			)
+		}
+	}
+	return nil
+}
+
 // ValidateSecretFields checks that secret-specific fields (created_at,
 // expires_at, created_by, identity) are only used on resources with
 // the "secret" trait. Using them on other traits has no effect and
@@ -232,6 +254,31 @@ func ValidateReferences(data *LoadedData) error {
 					"but no user or resource with that ID exists. "+
 					"Check for typos or add the missing resource",
 				i+1, m.InheritedResourceID,
+			)
+		}
+		principalEntKey := m.PrincipalResourceID + ":" + m.PrincipalEntitlementSlug
+		if m.PrincipalResourceID != "" && m.PrincipalEntitlementSlug != "" && !entitlementKeys[principalEntKey] {
+			return fmt.Errorf(
+				"baton-file: grant_inheritance_mapping #%d references principal entitlement %q, "+
+					"but no entitlement with that resource_id and slug exists. "+
+					"Check for typos or add the missing entitlement definition",
+				i+1, principalEntKey,
+			)
+		}
+		inheritedEntKey := m.InheritedResourceID + ":" + m.InheritedEntitlementSlug
+		if m.InheritedResourceID != "" && m.InheritedEntitlementSlug != "" && !entitlementKeys[inheritedEntKey] {
+			return fmt.Errorf(
+				"baton-file: grant_inheritance_mapping #%d references inherited entitlement %q, "+
+					"but no entitlement with that resource_id and slug exists. "+
+					"Check for typos or add the missing entitlement definition",
+				i+1, inheritedEntKey,
+			)
+		}
+		if m.InheritanceDepth != "full" && m.InheritanceDepth != "shallow" {
+			return fmt.Errorf(
+				"baton-file: grant_inheritance_mapping #%d has invalid inheritance_depth %q. "+
+					"Must be \"full\" or \"shallow\"",
+				i+1, m.InheritanceDepth,
 			)
 		}
 	}

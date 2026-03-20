@@ -69,6 +69,10 @@ func (fc *FileConnector) Validate(ctx context.Context) (annotations.Annotations,
 		return nil, err
 	}
 
+	if err := client.ValidateEntitlementFields(data); err != nil {
+		return nil, err
+	}
+
 	if err := client.ValidateSecretFields(data); err != nil {
 		return nil, err
 	}
@@ -102,6 +106,10 @@ func (fc *FileConnector) ResourceSyncers(ctx context.Context) []connectorbuilder
 			return nil
 		}
 		if err := client.ValidateTraits(loadedData); err != nil {
+			l.Error("baton-file: validation failed", zap.Error(err))
+			return nil
+		}
+		if err := client.ValidateEntitlementFields(loadedData); err != nil {
 			l.Error("baton-file: validation failed", zap.Error(err))
 			return nil
 		}
@@ -227,6 +235,9 @@ func newSyncCache(ctx context.Context, data *client.LoadedData) (*syncCache, err
 				zap.String("child_id", r.ID), zap.String("parent_id", r.ParentResource))
 			continue
 		}
+		// On failure the resource stays in the cache without its parent.
+		// Removing it would break any grants referencing it — keeping a
+		// parentless resource is the lesser problem.
 		if err := rs.WithParentResourceID(parent.GetId())(child); err != nil {
 			l.Warn("baton-file: failed to set parent resource id",
 				zap.String("child_id", r.ID), zap.String("parent_id", r.ParentResource), zap.Error(err))

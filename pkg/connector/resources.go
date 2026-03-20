@@ -109,7 +109,7 @@ func (b *resourceBuilder) Grants(ctx context.Context, resource *v2.Resource,
 		}
 
 		if m.InheritanceDepth != "full" && m.InheritanceDepth != "shallow" {
-			l.Error("baton-file: invalid inheritance_depth, must be \"full\" or \"shallow\"",
+			l.Warn("baton-file: invalid inheritance_depth, must be \"full\" or \"shallow\"",
 				zap.String("value", m.InheritanceDepth), zap.Int("index", i))
 			continue
 		}

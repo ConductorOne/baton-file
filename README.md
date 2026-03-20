@@ -4,7 +4,7 @@
 
 `baton-file` [![Go Reference](https://pkg.go.dev/badge/github.com/conductorone/baton-file.svg)](https://pkg.go.dev/github.com/conductorone/baton-file) ![ci](https://github.com/conductorone/baton-file/actions/workflows/ci.yaml/badge.svg) ![verify](https://github.com/conductorone/baton-file/actions/workflows/verify.yaml/badge.svg)
 
-`baton-file` is a connector that syncs identity security data from YAML, JSON/JSONC, CSV, or Excel (XLSX) file formats using the [Baton SDK](https://github.com/conductorone/baton-sdk).
+`baton-file` is a read-only connector that syncs identity security data from YAML, JSON/JSONC, CSV, or Excel (XLSX) files into C1 using the [Baton SDK](https://github.com/conductorone/baton-sdk).
 
 > **BREAKING CHANGES in this version:** Field names, grant structure, and XLSX sheet names
 > have changed. Files using the old format will produce clear error messages with migration

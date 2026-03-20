@@ -152,6 +152,7 @@ func newSyncCache(ctx context.Context, data *client.LoadedData) (*syncCache, err
 	// parent references use raw IDs, so ambiguity would break lookups downstream.
 	// Documented in the XLSX Instructions sheet (rule #1) and all format docs.
 	c.resources = make(map[string]*v2.Resource)
+	var buildErrors []string
 	for _, u := range data.Users {
 		if u.ID == "" {
 			l.Warn("baton-file: skipping user with empty id")
@@ -163,7 +164,7 @@ func newSyncCache(ctx context.Context, data *client.LoadedData) (*syncCache, err
 		}
 		res, err := buildUserResource(ctx, u, userResourceType)
 		if err != nil {
-			l.Error("baton-file: failed to build user resource", zap.String("id", u.ID), zap.Error(err))
+			buildErrors = append(buildErrors, fmt.Sprintf("user %s: %v", u.ID, err))
 			continue
 		}
 		c.resources[u.ID] = res
@@ -183,15 +184,20 @@ func newSyncCache(ctx context.Context, data *client.LoadedData) (*syncCache, err
 		}
 		rt := c.resourceTypes[strings.ToLower(r.ResourceType)]
 		if rt == nil {
-			l.Error("baton-file: resource type not found", zap.String("id", r.ID), zap.String("type", r.ResourceType))
+			buildErrors = append(buildErrors, fmt.Sprintf("resource %s: unknown resource type %q", r.ID, r.ResourceType))
 			continue
 		}
 		res, err := buildResource(ctx, r, rt)
 		if err != nil {
-			l.Error("baton-file: failed to build resource", zap.String("id", r.ID), zap.Error(err))
+			buildErrors = append(buildErrors, fmt.Sprintf("resource %s: %v", r.ID, err))
 			continue
 		}
 		c.resources[r.ID] = res
+	}
+
+	if len(buildErrors) > 0 {
+		return nil, fmt.Errorf("baton-file: failed to build %d resource(s): %s",
+			len(buildErrors), strings.Join(buildErrors, "; "))
 	}
 
 	// 4. Wire parent resources

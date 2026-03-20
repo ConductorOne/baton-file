@@ -81,11 +81,15 @@ var validTraits = map[string]bool{
 	"user": true, "group": true, "role": true, "app": true, "secret": true,
 }
 
-// ValidateTraits checks that every resource uses a recognized trait value.
+// ValidateTraits checks that every resource has a recognized trait value.
 func ValidateTraits(data *LoadedData) error {
 	for _, r := range data.Resources {
 		if r.Trait == "" {
-			continue
+			return fmt.Errorf(
+				"baton-file: resource %q is missing a trait. "+
+					"Valid traits are: user, group, role, app, secret",
+				r.ID,
+			)
 		}
 		if !validTraits[strings.ToLower(r.Trait)] {
 			return fmt.Errorf(

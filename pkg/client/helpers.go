@@ -129,8 +129,8 @@ func (f *FlexibleStringList) UnmarshalJSON(data []byte) error {
 
 func ParseTypeColonID(value string) (string, string, error) {
 	idx := strings.Index(value, ":")
-	if idx < 0 {
-		return "", "", fmt.Errorf("baton-file: invalid format %q, expected \"type:id\"", value)
+	if idx <= 0 || idx == len(value)-1 {
+		return "", "", fmt.Errorf("baton-file: invalid format %q, expected \"type:id\" with non-empty type and id", value)
 	}
 	return value[:idx], value[idx+1:], nil
 }

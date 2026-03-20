@@ -49,6 +49,7 @@ func (b *resourceBuilder) List(ctx context.Context, parentResourceID *v2.Resourc
 	return rv, &rs.SyncOpResults{}, nil
 }
 
+// Same full-scan rationale as List() — see comment above.
 func (b *resourceBuilder) Entitlements(ctx context.Context, resource *v2.Resource,
 	opts rs.SyncOpAttrs) ([]*v2.Entitlement, *rs.SyncOpResults, error) {
 	var rv []*v2.Entitlement
@@ -64,6 +65,7 @@ func (b *resourceBuilder) Entitlements(ctx context.Context, resource *v2.Resourc
 	return rv, &rs.SyncOpResults{}, nil
 }
 
+// Same full-scan rationale as List() — see comment above.
 func (b *resourceBuilder) Grants(ctx context.Context, resource *v2.Resource,
 	opts rs.SyncOpAttrs) ([]*v2.Grant, *rs.SyncOpResults, error) {
 	l := ctxzap.Extract(ctx)

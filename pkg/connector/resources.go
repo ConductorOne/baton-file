@@ -234,7 +234,7 @@ func buildResource(ctx context.Context, data client.ResourceData,
 	}
 
 	if len(resourceType.GetTraits()) > 0 {
-		switch resourceType.GetTraits()[0] {
+		switch resourceType.GetTraits()[0] { //nolint:exhaustive // only user-defined traits are relevant here
 		case v2.ResourceType_TRAIT_GROUP:
 			resourceOpts = append(resourceOpts, rs.WithGroupTrait(buildGroupTraitOptions(data)...))
 		case v2.ResourceType_TRAIT_ROLE:

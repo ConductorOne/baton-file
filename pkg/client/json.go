@@ -57,12 +57,17 @@ func stripJSONComments(data []byte) []byte {
 
 		if i+1 < len(data) && data[i] == '/' && data[i+1] == '*' {
 			i += 2
+			closed := false
 			for i+1 < len(data) {
 				if data[i] == '*' && data[i+1] == '/' {
 					i += 2
+					closed = true
 					break
 				}
 				i++
+			}
+			if !closed {
+				i = len(data)
 			}
 			continue
 		}

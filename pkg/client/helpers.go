@@ -22,9 +22,7 @@ var timeFormats = []string{
 	"2006-01-02T15:04:05.000-07:00",
 	"2006-01-02",
 	"01/02/2006 15:04:05",
-	"02/01/2006 15:04:05",
 	"01/02/2006",
-	"02/01/2006",
 	"Jan 02, 2006 15:04:05",
 	"02-JAN-2006 15:04:05",
 	"02-Jan-2006 15:04:05",
@@ -124,10 +122,38 @@ func (f *FlexibleStringList) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func ParseTypeColonID(value string) (resourceType string, resourceID string, err error) {
+func ParseTypeColonID(value string) (string, string, error) {
 	idx := strings.Index(value, ":")
 	if idx < 0 {
 		return "", "", fmt.Errorf("baton-file: invalid format %q, expected \"type:id\"", value)
 	}
 	return value[:idx], value[idx+1:], nil
+}
+
+func SplitCommaSeparated(raw string) FlexibleStringList {
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	var result FlexibleStringList
+	for _, p := range parts {
+		trimmed := strings.TrimSpace(p)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
+func ParseOptionalBool(raw string) *bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "true", "1":
+		v := true
+		return &v
+	case "false", "0":
+		v := false
+		return &v
+	default:
+		return nil
+	}
 }

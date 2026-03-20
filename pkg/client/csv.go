@@ -49,33 +49,11 @@ func loadCSVData(filePath string) (*LoadedData, error) {
 	}
 
 	csvSplitList := func(row []string, col string) FlexibleStringList {
-		raw := csvGet(row, col)
-		if raw == "" {
-			return nil
-		}
-		parts := strings.Split(raw, ",")
-		var result FlexibleStringList
-		for _, p := range parts {
-			trimmed := strings.TrimSpace(p)
-			if trimmed != "" {
-				result = append(result, trimmed)
-			}
-		}
-		return result
+		return SplitCommaSeparated(csvGet(row, col))
 	}
 
 	csvParseBool := func(row []string, col string) *bool {
-		raw := strings.ToLower(csvGet(row, col))
-		switch raw {
-		case "true", "1":
-			v := true
-			return &v
-		case "false", "0":
-			v := false
-			return &v
-		default:
-			return nil
-		}
+		return ParseOptionalBool(csvGet(row, col))
 	}
 
 	csvBuildProfile := func(row []string) map[string]interface{} {

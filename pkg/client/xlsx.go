@@ -18,7 +18,7 @@ func getColumnIndex(headers []string, columnName string) int {
 }
 
 func safeGet(row []string, headerMap map[string]int, headerName string) string {
-	idx, ok := headerMap[headerName]
+	idx, ok := headerMap[strings.ToLower(strings.TrimSpace(headerName))]
 	if !ok || idx >= len(row) {
 		return ""
 	}
@@ -28,39 +28,17 @@ func safeGet(row []string, headerMap map[string]int, headerName string) string {
 func buildHeaderMap(headers []string) map[string]int {
 	m := make(map[string]int)
 	for i, h := range headers {
-		m[strings.TrimSpace(h)] = i
+		m[strings.ToLower(strings.TrimSpace(h))] = i
 	}
 	return m
 }
 
 func xlsxSplitList(row []string, headerMap map[string]int, headerName string) FlexibleStringList {
-	raw := safeGet(row, headerMap, headerName)
-	if raw == "" {
-		return nil
-	}
-	parts := strings.Split(raw, ",")
-	var result FlexibleStringList
-	for _, p := range parts {
-		trimmed := strings.TrimSpace(p)
-		if trimmed != "" {
-			result = append(result, trimmed)
-		}
-	}
-	return result
+	return SplitCommaSeparated(safeGet(row, headerMap, headerName))
 }
 
 func xlsxParseBool(row []string, headerMap map[string]int, headerName string) *bool {
-	raw := strings.ToLower(safeGet(row, headerMap, headerName))
-	switch raw {
-	case "true", "1":
-		v := true
-		return &v
-	case "false", "0":
-		v := false
-		return &v
-	default:
-		return nil
-	}
+	return ParseOptionalBool(safeGet(row, headerMap, headerName))
 }
 
 func detectOldHeaders(headers []string, oldToNew map[string]string) error {
@@ -132,17 +110,17 @@ func loadExcelData(filePath string) (*LoadedData, error) {
 				continue
 			}
 
-			for header := range headerMap {
-				if strings.HasPrefix(header, "Profile: ") {
-					profileKey := strings.TrimSpace(strings.TrimPrefix(header, "Profile: "))
-					if profileKey != "" {
-						profileValue := safeGet(row, headerMap, header)
-						if profileValue != "" {
-							userData.Profile[strings.ToLower(profileKey)] = profileValue
-						}
+		for header := range headerMap {
+			if strings.HasPrefix(header, "profile: ") {
+				profileKey := strings.TrimSpace(strings.TrimPrefix(header, "profile: "))
+				if profileKey != "" {
+					profileValue := safeGet(row, headerMap, header)
+					if profileValue != "" {
+						userData.Profile[profileKey] = profileValue
 					}
 				}
 			}
+		}
 			if len(userData.Profile) == 0 {
 				userData.Profile = nil
 			}
@@ -168,10 +146,9 @@ func loadExcelData(filePath string) (*LoadedData, error) {
 		headerMap := buildHeaderMap(headers)
 
 		var profileCols []string
-		for _, h := range headers {
-			trimmed := strings.TrimSpace(h)
-			if strings.HasPrefix(trimmed, "Profile: ") {
-				profileCols = append(profileCols, trimmed)
+		for key := range headerMap {
+			if strings.HasPrefix(key, "profile: ") {
+				profileCols = append(profileCols, key)
 			}
 		}
 
@@ -197,8 +174,8 @@ func loadExcelData(filePath string) (*LoadedData, error) {
 			for _, col := range profileCols {
 				val := safeGet(row, headerMap, col)
 				if val != "" {
-					key := strings.TrimSpace(strings.TrimPrefix(col, "Profile: "))
-					profile[strings.ToLower(key)] = val
+					key := strings.TrimSpace(strings.TrimPrefix(col, "profile: "))
+					profile[key] = val
 				}
 			}
 			if len(profile) > 0 {

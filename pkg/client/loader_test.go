@@ -55,7 +55,7 @@ func TestValidateLoadedData_ValidData(t *testing.T) {
 
 func TestLoadFileData_UnsupportedExtension(t *testing.T) {
 	tmpFile := t.TempDir() + "/data.txt"
-	if err := os.WriteFile(tmpFile, []byte("hello"), 0o644); err != nil {
+	if err := os.WriteFile(tmpFile, []byte("hello"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	_, err := LoadFileData(tmpFile)

@@ -54,6 +54,12 @@ func (fc *FileConnector) Validate(ctx context.Context) (annotations.Annotations,
 		}
 		return nil, fmt.Errorf("baton-file: error accessing input file: %w", err)
 	}
+
+	_, err = client.LoadFileData(fc.inputFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("baton-file: input file is invalid: %w", err)
+	}
+
 	return nil, nil
 }
 
@@ -95,7 +101,19 @@ func newSyncCache(ctx context.Context, data *client.LoadedData) (*syncCache, err
 		if typeID == userResourceType.GetId() {
 			continue
 		}
-		if _, exists := c.resourceTypes[typeID]; exists {
+		if existing, exists := c.resourceTypes[typeID]; exists {
+			existingTrait := ""
+			if len(existing.GetTraits()) > 0 {
+				existingTrait = existing.GetTraits()[0].String()
+			}
+			newTrait := strings.ToLower(r.Trait)
+			if TraitMap[newTrait].String() != existingTrait {
+				l.Warn("baton-file: resource type has conflicting traits, using first occurrence",
+					zap.String("resource_type", r.ResourceType),
+					zap.String("resource_id", r.ID),
+					zap.String("expected_trait", existingTrait),
+					zap.String("conflicting_trait", r.Trait))
+			}
 			continue
 		}
 		c.resourceTypes[typeID] = buildDynamicResourceType(r.ResourceType, r.Trait)
@@ -126,8 +144,10 @@ func newSyncCache(ctx context.Context, data *client.LoadedData) (*syncCache, err
 			l.Warn("baton-file: skipping resource with empty id")
 			continue
 		}
-		if _, exists := c.resources[r.ID]; exists {
-			l.Warn("baton-file: duplicate resource id, skipping", zap.String("id", r.ID))
+		if existing, exists := c.resources[r.ID]; exists {
+			l.Warn("baton-file: resource id conflicts with an existing resource or user, skipping",
+				zap.String("id", r.ID),
+				zap.String("existing_type", existing.GetId().GetResourceType()))
 			continue
 		}
 		rt := c.resourceTypes[strings.ToLower(r.ResourceType)]

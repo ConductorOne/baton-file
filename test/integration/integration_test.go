@@ -1,13 +1,11 @@
 package integration
 
 import (
-	"context"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/conductorone/baton-file/pkg/client"
-	"github.com/conductorone/baton-file/pkg/connector"
 )
 
 func TestLoadYAML(t *testing.T) {
@@ -60,7 +58,7 @@ func TestUsersOnly(t *testing.T) {
 func TestDeprecatedFieldDetection(t *testing.T) {
 	yamlWithOldName := "users:\n  - name: alice\n    display_name: Alice\n"
 	tmpFile := t.TempDir() + "/old.yaml"
-	if err := os.WriteFile(tmpFile, []byte(yamlWithOldName), 0o644); err != nil {
+	if err := os.WriteFile(tmpFile, []byte(yamlWithOldName), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	_, err := client.LoadFileData(tmpFile)
@@ -78,7 +76,7 @@ func TestDeprecatedFieldDetection(t *testing.T) {
 func TestDeprecatedGrantsSection(t *testing.T) {
 	yamlWithGrants := "users: []\ngrants:\n  - principal: alice\n    entitlement_id: \"team:member\"\n"
 	tmpFile := t.TempDir() + "/old-grants.yaml"
-	if err := os.WriteFile(tmpFile, []byte(yamlWithGrants), 0o644); err != nil {
+	if err := os.WriteFile(tmpFile, []byte(yamlWithGrants), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	_, err := client.LoadFileData(tmpFile)
@@ -206,7 +204,7 @@ func TestJSONCWithComments(t *testing.T) {
 		"direct_user_grants": [],
 	}`
 	tmpFile := t.TempDir() + "/test.jsonc"
-	if err := os.WriteFile(tmpFile, []byte(jsonc), 0o644); err != nil {
+	if err := os.WriteFile(tmpFile, []byte(jsonc), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	data, err := client.LoadFileData(tmpFile)
@@ -293,8 +291,3 @@ func discoverResourceTypes(data *client.LoadedData) map[string]bool {
 	}
 	return types
 }
-
-var (
-	_ = context.Background
-	_ = connector.TraitMap
-)

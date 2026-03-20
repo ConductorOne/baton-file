@@ -7,6 +7,8 @@ import (
 	"strings"
 )
 
+// No deprecated field detection — CSV was added in this version with the
+// current field names. There are no legacy CSV files to migrate from.
 func loadCSVData(filePath string) (*LoadedData, error) {
 	f, err := os.Open(filePath)
 	if err != nil {

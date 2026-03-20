@@ -68,6 +68,10 @@ func (fc *FileConnector) Validate(ctx context.Context) (annotations.Annotations,
 func (fc *FileConnector) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncerV2 {
 	l := ctxzap.Extract(ctx)
 
+	// Validate() caches parsed data; reuse it here to avoid a double load.
+	// Fallback re-loads if Validate() wasn't called. This method's signature
+	// cannot return an error, so log-and-return-nil is intentional — the
+	// connector stays alive for the next sync cycle.
 	loadedData := fc.validatedData
 	if loadedData == nil {
 		var err error
@@ -126,7 +130,10 @@ func newSyncCache(ctx context.Context, data *client.LoadedData) (*syncCache, err
 		c.resourceTypes[typeID] = buildDynamicResourceType(r.ResourceType, r.Trait)
 	}
 
-	// 2. Build user resources
+	// 2. Build user resources.
+	// IDs are globally unique across users and resources by design — grants and
+	// parent references use raw IDs, so ambiguity would break lookups downstream.
+	// Documented in the XLSX Instructions sheet (rule #1) and all format docs.
 	c.resources = make(map[string]*v2.Resource)
 	for _, u := range data.Users {
 		if u.ID == "" {

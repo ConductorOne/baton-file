@@ -33,6 +33,8 @@ func buildHeaderMap(headers []string) map[string]int {
 	return m
 }
 
+// Thin wrappers adapting the XLSX row+headerMap lookup to shared helpers.
+// CSV has equivalent wrappers with a different call signature (closure over headerMap).
 func xlsxSplitList(row []string, headerMap map[string]int, headerName string) FlexibleStringList {
 	return SplitCommaSeparated(safeGet(row, headerMap, headerName))
 }
@@ -110,17 +112,17 @@ func loadExcelData(filePath string) (*LoadedData, error) {
 				continue
 			}
 
-		for header := range headerMap {
-			if strings.HasPrefix(header, "profile: ") {
-				profileKey := strings.TrimSpace(strings.TrimPrefix(header, "profile: "))
-				if profileKey != "" {
-					profileValue := safeGet(row, headerMap, header)
-					if profileValue != "" {
-						userData.Profile[profileKey] = profileValue
+			for header := range headerMap {
+				if strings.HasPrefix(header, "profile: ") {
+					profileKey := strings.TrimSpace(strings.TrimPrefix(header, "profile: "))
+					if profileKey != "" {
+						profileValue := safeGet(row, headerMap, header)
+						if profileValue != "" {
+							userData.Profile[profileKey] = profileValue
+						}
 					}
 				}
 			}
-		}
 			if len(userData.Profile) == 0 {
 				userData.Profile = nil
 			}

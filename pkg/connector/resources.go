@@ -72,6 +72,12 @@ func (b *resourceBuilder) Grants(ctx context.Context, resource *v2.Resource,
 			continue
 		}
 
+		if _, ok := b.cache.resources[g.PrincipalID]; !ok {
+			l.Warn("baton-file: skipping direct grant, principal not found in users",
+				zap.String("principal_id", g.PrincipalID), zap.Int("index", i))
+			continue
+		}
+
 		entKey := fmt.Sprintf("%s:%s", g.ResourceID, g.EntitlementSlug)
 		if _, ok := b.cache.entitlements[entKey]; !ok {
 			l.Warn("baton-file: skipping direct grant, entitlement not found",

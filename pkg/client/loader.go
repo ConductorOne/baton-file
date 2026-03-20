@@ -136,24 +136,37 @@ func ValidateSecretFields(data *LoadedData) error {
 	return nil
 }
 
-// ValidateReferences checks that cross-references between sections point to
-// existing IDs: entitlement resource_id and resource parent_resource must each
-// match a user or resource ID defined in the file.
+// ValidateReferences checks that every cross-reference between sections points
+// to an existing ID. This catches typos and missing definitions at startup
+// rather than producing scattered runtime warnings during sync.
 func ValidateReferences(data *LoadedData) error {
-	ids := make(map[string]bool, len(data.Users)+len(data.Resources))
+	userIDs := make(map[string]bool, len(data.Users))
 	for _, u := range data.Users {
 		if u.ID != "" {
-			ids[u.ID] = true
+			userIDs[u.ID] = true
 		}
+	}
+
+	allIDs := make(map[string]bool, len(data.Users)+len(data.Resources))
+	for id := range userIDs {
+		allIDs[id] = true
 	}
 	for _, r := range data.Resources {
 		if r.ID != "" {
-			ids[r.ID] = true
+			allIDs[r.ID] = true
+		}
+	}
+
+	// Entitlement key set for grant validation below.
+	entitlementKeys := make(map[string]bool, len(data.Entitlements))
+	for _, e := range data.Entitlements {
+		if e.ResourceID != "" && e.EntitlementSlug != "" {
+			entitlementKeys[e.ResourceID+":"+e.EntitlementSlug] = true
 		}
 	}
 
 	for _, r := range data.Resources {
-		if r.ParentResource != "" && !ids[r.ParentResource] {
+		if r.ParentResource != "" && !allIDs[r.ParentResource] {
 			return fmt.Errorf(
 				"baton-file: resource %q references parent_resource %q, "+
 					"but no user or resource with that ID exists. "+
@@ -163,13 +176,62 @@ func ValidateReferences(data *LoadedData) error {
 		}
 	}
 
+	// Entitlements can reference user or resource IDs — entitlements on users
+	// are uncommon but valid (e.g., impersonation permissions).
 	for _, e := range data.Entitlements {
-		if e.ResourceID != "" && !ids[e.ResourceID] {
+		if e.ResourceID != "" && !allIDs[e.ResourceID] {
 			return fmt.Errorf(
 				"baton-file: entitlement %q on resource_id %q — "+
 					"no user or resource with that ID exists. "+
 					"Check for typos or add the missing resource",
 				e.EntitlementSlug, e.ResourceID,
+			)
+		}
+	}
+
+	for i, g := range data.DirectUserGrants {
+		if g.PrincipalID != "" && !userIDs[g.PrincipalID] {
+			return fmt.Errorf(
+				"baton-file: direct_user_grant #%d references principal_id %q, "+
+					"but no user with that ID exists. "+
+					"principal_id must be a user ID, not a resource ID",
+				i+1, g.PrincipalID,
+			)
+		}
+		if g.ResourceID != "" && !allIDs[g.ResourceID] {
+			return fmt.Errorf(
+				"baton-file: direct_user_grant #%d references resource_id %q, "+
+					"but no user or resource with that ID exists. "+
+					"Check for typos or add the missing resource",
+				i+1, g.ResourceID,
+			)
+		}
+		entKey := g.ResourceID + ":" + g.EntitlementSlug
+		if g.ResourceID != "" && g.EntitlementSlug != "" && !entitlementKeys[entKey] {
+			return fmt.Errorf(
+				"baton-file: direct_user_grant #%d references entitlement %q, "+
+					"but no entitlement with that resource_id and slug exists. "+
+					"Check for typos or add the missing entitlement definition",
+				i+1, entKey,
+			)
+		}
+	}
+
+	for i, m := range data.GrantInheritanceMappings {
+		if m.PrincipalResourceID != "" && !allIDs[m.PrincipalResourceID] {
+			return fmt.Errorf(
+				"baton-file: grant_inheritance_mapping #%d references principal_resource_id %q, "+
+					"but no user or resource with that ID exists. "+
+					"Check for typos or add the missing resource",
+				i+1, m.PrincipalResourceID,
+			)
+		}
+		if m.InheritedResourceID != "" && !allIDs[m.InheritedResourceID] {
+			return fmt.Errorf(
+				"baton-file: grant_inheritance_mapping #%d references inherited_resource_id %q, "+
+					"but no user or resource with that ID exists. "+
+					"Check for typos or add the missing resource",
+				i+1, m.InheritedResourceID,
 			)
 		}
 	}

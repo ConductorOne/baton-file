@@ -27,6 +27,10 @@ func (b *resourceBuilder) List(ctx context.Context, parentResourceID *v2.Resourc
 	opts rs.SyncOpAttrs) ([]*v2.Resource, *rs.SyncOpResults, error) {
 	// Full scan is fine — resource types are single-digit and total resources
 	// are at most low thousands for a file-based connector.
+	//
+	// When parentResourceID is nil the SDK is requesting top-level resources,
+	// so we exclude any resource that has a parent. The SDK calls List() again
+	// with the parent's ID to fetch nested children.
 	var rv []*v2.Resource
 	for _, res := range b.cache.resources {
 		if res.GetId().GetResourceType() != b.resourceType.GetId() {
@@ -76,7 +80,8 @@ func (b *resourceBuilder) Grants(ctx context.Context, resource *v2.Resource,
 			continue
 		}
 
-		if _, ok := b.cache.resources[g.PrincipalID]; !ok {
+		principalRes, ok := b.cache.resources[g.PrincipalID]
+		if !ok || principalRes.GetId().GetResourceType() != userResourceType.GetId() {
 			l.Warn("baton-file: skipping direct grant, principal not found in users",
 				zap.String("principal_id", g.PrincipalID), zap.Int("index", i))
 			continue

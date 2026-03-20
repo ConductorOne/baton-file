@@ -228,7 +228,7 @@ func newSyncCache(ctx context.Context, data *client.LoadedData) (*syncCache, err
 			continue
 		}
 		if err := rs.WithParentResourceID(parent.GetId())(child); err != nil {
-			l.Error("baton-file: failed to set parent resource id",
+			l.Warn("baton-file: failed to set parent resource id",
 				zap.String("child_id", r.ID), zap.String("parent_id", r.ParentResource), zap.Error(err))
 		}
 	}

@@ -96,6 +96,9 @@ func (f *FlexibleStringList) UnmarshalYAML(node *yaml.Node) error {
 		*f = FlexibleStringList(ss)
 		return nil
 	case yaml.AliasNode:
+		// Recurse into the resolved alias target. The Kind guard prevents
+		// single-level self-reference; chained circular aliases (A→B→A)
+		// are rejected by yaml.v3 during parsing before this runs.
 		if node.Alias != nil && node.Alias.Kind != yaml.AliasNode {
 			return f.UnmarshalYAML(node.Alias)
 		}

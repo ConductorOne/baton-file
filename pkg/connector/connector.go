@@ -89,6 +89,14 @@ func (fc *FileConnector) ResourceSyncers(ctx context.Context) []connectorbuilder
 			l.Error("baton-file: failed to load input file", zap.Error(err))
 			return nil
 		}
+		if err := client.ValidateUniqueIDs(loadedData); err != nil {
+			l.Error("baton-file: validation failed", zap.Error(err))
+			return nil
+		}
+		if err := client.ValidateTraits(loadedData); err != nil {
+			l.Error("baton-file: validation failed", zap.Error(err))
+			return nil
+		}
 	}
 	fc.validatedData = nil
 

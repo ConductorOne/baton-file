@@ -74,6 +74,7 @@ func loadCSVData(filePath string) (*LoadedData, error) {
 	}
 
 	data := &LoadedData{}
+	unknownTypes := make(map[string]bool)
 
 	for _, row := range records[1:] {
 		recordType := csvGet(row, "record_type")
@@ -135,8 +136,20 @@ func loadCSVData(filePath string) (*LoadedData, error) {
 				InheritanceDepth:         csvGet(row, "inheritance_depth"),
 			})
 		default:
-			continue
+			unknownTypes[recordType] = true
 		}
+	}
+
+	if len(unknownTypes) > 0 {
+		names := make([]string, 0, len(unknownTypes))
+		for t := range unknownTypes {
+			names = append(names, t)
+		}
+		return nil, fmt.Errorf(
+			"baton-file: csv contains unrecognized record_type values: %v. "+
+				"Valid types are: user, resource, entitlement, direct_user_grant, grant_inheritance_mapping",
+			names,
+		)
 	}
 
 	return data, nil

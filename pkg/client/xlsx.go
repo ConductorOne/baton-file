@@ -43,6 +43,10 @@ func xlsxParseBool(row []string, headerMap map[string]int, headerName string) *b
 	return ParseOptionalBool(safeGet(row, headerMap, headerName))
 }
 
+// detectOldHeaders checks for deprecated column names from the previous XLSX
+// template. Matching is case-sensitive because the old template always used
+// Title Case headers; buildHeaderMap/safeGet handle case-insensitive lookup
+// for current column names separately.
 func detectOldHeaders(headers []string, oldToNew map[string]string) error {
 	for _, h := range headers {
 		normalized := strings.TrimSpace(h)

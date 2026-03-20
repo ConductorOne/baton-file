@@ -136,6 +136,8 @@ func (b *resourceBuilder) Grants(ctx context.Context, resource *v2.Resource,
 		allGrants = append(allGrants, newGrant)
 	}
 
+	// Sort by concatenated resource type/id rather than proto String() to
+	// ensure deterministic output across protobuf library versions.
 	sort.SliceStable(allGrants, func(i, j int) bool {
 		pi := allGrants[i].GetPrincipal().GetId()
 		pj := allGrants[j].GetPrincipal().GetId()

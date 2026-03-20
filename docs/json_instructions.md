@@ -1,155 +1,106 @@
-# `baton-file` Connector: JSON (`.json`) Instructions
+# JSON / JSONC Input Format
 
-This document provides detailed instructions on how to structure your data within a JSON (`.json`) file for use with the `baton-file` connector.
+Both `.json` and `.jsonc` file extensions are supported. JSONC files may contain `//` line comments, `/* block comments */`, and trailing commas — these are stripped before parsing.
 
-## Overview
+**Templates:** See `templates/baton-file-jsonc-template.jsonc` (full) and `templates/baton-file-jsonc-quickstart-template.jsonc` (minimal). Required fields are annotated with `// REQUIRED` comments.
 
-The connector expects a JSON file containing a single top-level object. This object must have four keys: `users`, `resources`, `entitlements`, and `grants`. Each key should hold an array of objects.
+## Breaking Changes
 
-*   **Keys:** Object keys within the arrays must match the expected field names defined below (lowercase snake_case). Key order generally does not matter in JSON objects.
-*   **Required Sections:** While all four top-level keys are processed if present, the connector can function if some arrays are empty or keys are missing (e.g., if you only have users and resources). However, grants require principals (users/resources) and entitlements to be defined.
-*   **Template:** A template file is available at [`templates/template.json`](../templates/template.json).
+- `name` → `id` in `users` and `resources` objects
+- `resource_function` → `trait` in `resources` objects
+- `entitlement` → `entitlement_slug` and `resource_name` → `resource_id` in `entitlements` objects
+- `grants` key removed → replaced by `direct_user_grants` and `grant_inheritance_mappings`
+- Using old field names produces a clear error with migration guidance
 
-## Top-Level Keys & Data Structure
+## Top-Level Structure
 
-### Key: `users`
-
-**Purpose:** Defines all user principals, including regular users and service accounts.
-**Format:** An array of user objects.
-
-**User Object Fields:**
-
-*   `name`: (String, **Required**) The unique identifier for the user. *Example: `"alice.admin"`, `"svc.data.agent"`*
-*   `display_name`: (String, **Required**) The user's full name or display name. *Example: `"Alice Admin"`, `"Data Agent Service Acct"`*
-*   `email`: (String, Optional) The user's primary email address. *Example: `"alice.admin@example.com"`*
-*   `status`: (String, Optional) The user's account status. Common values: `"enabled"`, `"active"`, `"inactive"`, `"disabled"`, `"suspended"`. Defaults to `enabled`. *Example: `"active"`, `"inactive"`*
-*   `last_login`: (String, Optional) The date the user last logged in, in `MM/DD/YYYY` format. *Example: `"04/01/2025"`*
-*   `type`: (String, Optional) The type of user account. Common values: `"human"`, `"user"`, `"person"`, `"service"`, `"system"`, `"bot"`, `"machine"`. Defaults to `human`. *Example: `"human"`, `"service"`*
-*   `profile`: (Object, Optional) An object containing additional user profile attributes. Keys should be strings, values can be strings, numbers, or booleans. *Example: `{ "department": "Engineering", "title": "Software Engineer", "employee_id": 12345 }`*
-
-**Example:**
-```json
+```jsonc
 {
-  "users": [
-    {
-      "name": "dave.developer",
-      "display_name": "Dave Developer",
-      "email": "dave.developer@example.com",
-      "status": "active",
-      "last_login": "04/01/2025",
-      "type": "human",
-      "profile": {
-        "department": "Engineering",
-        "title": "Software Engineer",
-        "hire_date": "2025-01-02"
-      }
-    },
-    {
-      "name": "svc.account.01",
-      "display_name": "Service Account 01",
-      "email": "svc.account.01@example.com",
-      "status": "active",
-      "type": "service",
-      "profile": {}
-    }
-  ],
+  "users": [],
   "resources": [],
   "entitlements": [],
-  "grants": []
+  "direct_user_grants": [],
+  "grant_inheritance_mappings": []  // optional — only needed for resource-to-resource inheritance
 }
 ```
 
-### Key: `resources`
+## Users
 
-**Purpose:** Defines all non-user resources (e.g., groups, roles, applications, workspaces) and assigns their primary Baton trait.
-**Format:** An array of resource objects.
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | yes | Unique user identifier |
+| `display_name` | string | yes | Display name |
+| `email` | string | no | Primary email address |
+| `status` | string | no | `enabled`, `active`, `disabled`, `inactive`, `suspended`, `deleted` (default: enabled) |
+| `type` | string | no | `human` or `service`/`system`/`bot`/`machine` (default: human) |
+| `last_login` | string | no | Last login timestamp (multi-format, see Date Formats) |
+| `login` | string | no | Login username |
+| `login_aliases` | string or string[] | no | Alternative login identifiers |
+| `employee_id` | string or string[] | no | Employee identifier(s) |
+| `additional_emails` | string or string[] | no | Non-primary email addresses |
+| `mfa_enabled` | boolean | no | Whether MFA is enabled (null/absent = not reported) |
+| `sso_enabled` | boolean | no | Whether SSO is enabled (null/absent = not reported) |
+| `status_details` | string | no | Human-readable status explanation |
+| `profile` | object | no | Key-value profile attributes |
 
-**Resource Object Fields:**
+### FlexibleStringList Fields
 
-*   `resource_type`: (String, **Required**) The type name for this category of resource. *Example: `"workspace"`, `"team"`, `"role"`, `"application"`*
-*   `resource_function`: (String, **Required**) Defines the primary Baton trait. Valid values: `"group"`, `"role"`, `"app"`, `"secret"`. Use an empty string `""` or a non-matching value for no specific trait. *Example: `"group"`, `"role"`*
-*   `name`: (String, **Required**) The unique identifier for this resource instance. *Example: `"development_workspace"`, `"admins_team"`, `"billing_app_admin_role"`*
-*   `display_name`: (String, **Required**) The human-readable name. *Example: `"Development Workspace"`, `"Administrators Team"`*
-*   `description`: (String, Optional) A description for this resource. *Example: `"Primary AWS development account"`*
-*   `parent_resource`: (String, Optional) The unique identifier (`name`) of the parent resource (must be a user or another resource). Use an empty string `""` or omit/`null` for no parent. *Example: `"development_workspace"`*
-
-**Example:**
+Fields marked as `string or string[]` accept either a single string or an array:
 ```json
-  "resources": [
-    {
-      "resource_type": "team",
-      "resource_function": "group",
-      "name": "app_dev_team",
-      "display_name": "App Dev Team",
-      "description": "Primary app development team",
-      "parent_resource": ""
-    },
-    {
-      "resource_type": "role",
-      "resource_function": "role",
-      "name": "dev_lead",
-      "display_name": "Dev Lead",
-      "description": "Development lead role",
-      "parent_resource": "app_dev_team"
-    }
-  ]
+{"employee_id": "EMP001"}
+{"employee_id": ["EMP001", "CONTRACTOR-99"]}
 ```
 
-### Key: `entitlements`
+## Resources
 
-**Purpose:** Defines specific permissions, membership types, or role assignments (entitlements) on resources.
-**Format:** An array of entitlement objects.
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `resource_type` | string | yes | Resource type (e.g., `team`, `role`, `application`) |
+| `trait` | string | yes | Trait: `group`, `role`, `app`, `secret`, `user` |
+| `id` | string | yes | Unique resource identifier |
+| `display_name` | string | yes | Display name |
+| `description` | string | no | Description |
+| `parent_resource` | string | no | ID of the parent resource |
+| `profile` | object | no | Key-value profile attributes |
+| `created_at` | string | no | Secret trait: creation timestamp |
+| `expires_at` | string | no | Secret trait: expiration timestamp |
+| `created_by` | string | no | Secret trait: creator reference, format `type:id` |
+| `identity` | string | no | Secret trait: identity reference, format `type:id` |
 
-**Entitlement Object Fields:**
+## Entitlements
 
-*   `resource_name`: (String, **Required**) The unique identifier (`name`) of the resource this entitlement applies to. *Example: `"admins_team"`, `"development_workspace"`*
-*   `entitlement`: (String, **Required**) The specific entitlement *slug*. *Example: `"member"`, `"owner"`, `"admin"`, `"read"`, `"assigned"`*
-*   `display_name`: (String, **Required**) The human-readable name. *Example: `"Member"`, `"Owner"`, `"Admin Access"`*
-*   `description`: (String, Optional) A description. *Example: `"Membership in the Admins team"`*
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `resource_id` | string | yes | ID of the resource this entitlement is defined on |
+| `entitlement_slug` | string | yes | Entitlement slug (unique per resource) |
+| `display_name` | string | no | Display name |
+| `description` | string | no | Description |
 
-**Example:**
-```json
-  "entitlements": [
-    {
-      "resource_name": "app_dev_team",
-      "entitlement": "member",
-      "display_name": "Member",
-      "description": "Membership in App Dev Team"
-    },
-    {
-      "resource_name": "billing_app",
-      "entitlement": "admin",
-      "display_name": "Admin Access",
-      "description": "Full administrative privileges"
-    }
-  ]
-```
+## Direct User Grants
 
-### Key: `grants`
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `principal_id` | string | yes | User ID receiving the grant |
+| `resource_id` | string | yes | Resource ID owning the entitlement |
+| `entitlement_slug` | string | yes | Entitlement slug being granted |
 
-**Purpose:** Defines which principals are granted which entitlements.
-**Format:** An array of grant objects.
+## Grant Inheritance Mappings
 
-**Grant Object Fields:**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `principal_resource_id` | string | yes | Resource whose membership triggers inheritance |
+| `principal_entitlement_slug` | string | yes | Entitlement slug on the principal resource |
+| `inherited_resource_id` | string | yes | Resource whose entitlement is inherited |
+| `inherited_entitlement_slug` | string | yes | Entitlement slug that is inherited |
+| `inheritance_depth` | string | yes | Must be `"full"` or `"shallow"` |
 
-*   `principal`: (String, **Required**) The unique identifier (`name`) of the user or resource receiving the grant. Can also be an entitlement key for expansion (see note below). *Example: `"alice.admin"`, `"app_dev_team"`, `"dev_lead:assigned"`*
-*   `entitlement_id`: (String, **Required**) The full identifier of the entitlement being granted (`resource_name:entitlement_slug`). *Example: `"app_dev_team:member"`, `"billing_app:admin"`*
+## Date Formats
 
-**Important Note on `principal` for Grant Expansion:**
+Timestamps accept multiple formats including:
+- ISO 8601 / RFC 3339: `2025-03-15T10:30:00Z`
+- Date only: `2025-03-15`
+- US date: `03/15/2025` (slash dates assume MM/DD/YYYY)
+- Unix timestamp (seconds): `1710496200`
+- Unix timestamp (milliseconds): `1710496200000`
 
-*   **Direct Grant (No Expansion):** List the principal's `name` (e.g., `"alice.admin"`, `"app_dev_team"`).
-*   **Grant Expansion (Groups/Roles):** Use the specific *entitlement key* defining membership/assignment (`resource_name:entitlement_slug`, e.g., `"app_dev_team:member"`, `"dev_lead:assigned"`). Using only the resource name (e.g., `"app_dev_team"`) will *not* enable expansion.
-
-**Example:**
-```json
-  "grants": [
-    {
-      "principal": "dave.developer",
-      "entitlement_id": "app_dev_team:member"
-    },
-    {
-      "principal": "app_dev_team:member", // Grant to members of app_dev_team
-      "entitlement_id": "billing_app:read"
-    }
-  ]
-``` 
+**Note:** Slash-format dates assume US format (MM/DD/YYYY). European users should use ISO 8601 (`YYYY-MM-DD`).

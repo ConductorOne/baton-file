@@ -1,0 +1,14 @@
+users:
+  - id: jane.smith
+    display_name: Jane Smith
+    email: jane.smith@example.com
+    status: enabled
+  - id: john.doe
+    display_name: John Doe
+    email: john.doe@example.com
+    status: disabled
+
+resources: []
+entitlements: []
+direct_user_grants: []
+grant_inheritance_mappings: []

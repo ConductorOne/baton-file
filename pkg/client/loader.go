@@ -102,6 +102,81 @@ func ValidateTraits(data *LoadedData) error {
 	return nil
 }
 
+// ValidateSecretFields checks that secret-specific fields (created_at,
+// expires_at, created_by, identity) are only used on resources with
+// the "secret" trait. Using them on other traits has no effect and
+// almost always indicates a mistake.
+func ValidateSecretFields(data *LoadedData) error {
+	for _, r := range data.Resources {
+		if strings.ToLower(r.Trait) == "secret" {
+			continue
+		}
+		var badFields []string
+		if r.CreatedAt != "" {
+			badFields = append(badFields, "created_at")
+		}
+		if r.ExpiresAt != "" {
+			badFields = append(badFields, "expires_at")
+		}
+		if r.CreatedBy != "" {
+			badFields = append(badFields, "created_by")
+		}
+		if r.Identity != "" {
+			badFields = append(badFields, "identity")
+		}
+		if len(badFields) > 0 {
+			return fmt.Errorf(
+				"baton-file: resource %q (trait %q) uses secret-specific fields: %s. "+
+					"These fields only apply to resources with trait \"secret\". "+
+					"Remove them or change the trait to \"secret\"",
+				r.ID, r.Trait, strings.Join(badFields, ", "),
+			)
+		}
+	}
+	return nil
+}
+
+// ValidateReferences checks that cross-references between sections point to
+// existing IDs: entitlement resource_id and resource parent_resource must each
+// match a user or resource ID defined in the file.
+func ValidateReferences(data *LoadedData) error {
+	ids := make(map[string]bool, len(data.Users)+len(data.Resources))
+	for _, u := range data.Users {
+		if u.ID != "" {
+			ids[u.ID] = true
+		}
+	}
+	for _, r := range data.Resources {
+		if r.ID != "" {
+			ids[r.ID] = true
+		}
+	}
+
+	for _, r := range data.Resources {
+		if r.ParentResource != "" && !ids[r.ParentResource] {
+			return fmt.Errorf(
+				"baton-file: resource %q references parent_resource %q, "+
+					"but no user or resource with that ID exists. "+
+					"Check for typos or add the missing resource",
+				r.ID, r.ParentResource,
+			)
+		}
+	}
+
+	for _, e := range data.Entitlements {
+		if e.ResourceID != "" && !ids[e.ResourceID] {
+			return fmt.Errorf(
+				"baton-file: entitlement %q on resource_id %q — "+
+					"no user or resource with that ID exists. "+
+					"Check for typos or add the missing resource",
+				e.EntitlementSlug, e.ResourceID,
+			)
+		}
+	}
+
+	return nil
+}
+
 func ValidateLoadedData(rawBytes []byte, format string) error {
 	var raw map[string]interface{}
 

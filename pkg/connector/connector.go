@@ -69,6 +69,14 @@ func (fc *FileConnector) Validate(ctx context.Context) (annotations.Annotations,
 		return nil, err
 	}
 
+	if err := client.ValidateSecretFields(data); err != nil {
+		return nil, err
+	}
+
+	if err := client.ValidateReferences(data); err != nil {
+		return nil, err
+	}
+
 	fc.validatedData = data
 
 	return nil, nil
@@ -94,6 +102,14 @@ func (fc *FileConnector) ResourceSyncers(ctx context.Context) []connectorbuilder
 			return nil
 		}
 		if err := client.ValidateTraits(loadedData); err != nil {
+			l.Error("baton-file: validation failed", zap.Error(err))
+			return nil
+		}
+		if err := client.ValidateSecretFields(loadedData); err != nil {
+			l.Error("baton-file: validation failed", zap.Error(err))
+			return nil
+		}
+		if err := client.ValidateReferences(loadedData); err != nil {
 			l.Error("baton-file: validation failed", zap.Error(err))
 			return nil
 		}
@@ -253,7 +269,7 @@ func newSyncCache(ctx context.Context, data *client.LoadedData) (*syncCache, err
 		}
 		parentRes := c.resources[e.ResourceID]
 		if parentRes == nil {
-			l.Error("baton-file: parent resource for entitlement not found", zap.String("resource_id", e.ResourceID))
+			l.Warn("baton-file: parent resource for entitlement not found", zap.String("resource_id", e.ResourceID))
 			continue
 		}
 		ent := entitlement.NewAssignmentEntitlement(parentRes, e.EntitlementSlug,

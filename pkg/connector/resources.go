@@ -240,7 +240,6 @@ func buildUserResource(ctx context.Context, userData client.UserData,
 
 func buildResource(ctx context.Context, data client.ResourceData,
 	resourceType *v2.ResourceType) (*v2.Resource, error) {
-	l := ctxzap.Extract(ctx)
 	var resourceOpts []rs.ResourceOption
 
 	if data.Description != "" {
@@ -259,14 +258,6 @@ func buildResource(ctx context.Context, data client.ResourceData,
 			resourceOpts = append(resourceOpts, rs.WithSecretTrait(buildSecretTraitOptions(ctx, data)...))
 		case v2.ResourceType_TRAIT_USER:
 			resourceOpts = append(resourceOpts, rs.WithUserTrait())
-		}
-	}
-
-	traitLower := strings.ToLower(data.Trait)
-	if traitLower != "secret" {
-		if data.CreatedAt != "" || data.ExpiresAt != "" || data.CreatedBy != "" || data.Identity != "" {
-			l.Warn("baton-file: secret-specific fields not applicable to trait, ignoring",
-				zap.String("resource_id", data.ID), zap.String("trait", traitLower))
 		}
 	}
 

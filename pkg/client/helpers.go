@@ -10,6 +10,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Slash-separated dates (MM/DD/YYYY) are interpreted as US format.
+// European users should use ISO 8601 (YYYY-MM-DD) to avoid ambiguity.
 var timeFormats = []string{
 	time.RFC3339,
 	time.RFC3339Nano,
@@ -64,9 +66,6 @@ func ParseTime(value string) (*time.Time, error) {
 			t := time.Unix(i, 0)
 			return &t, nil
 		}
-	}
-
-	if i, err := strconv.ParseInt(value, 10, 64); err == nil {
 		if i > 1000000000000 && i < 4102444800000 {
 			t := time.Unix(i/1000, (i%1000)*1000000)
 			return &t, nil
@@ -97,7 +96,10 @@ func (f *FlexibleStringList) UnmarshalYAML(node *yaml.Node) error {
 		*f = FlexibleStringList(ss)
 		return nil
 	case yaml.AliasNode:
-		return f.UnmarshalYAML(node.Alias)
+		if node.Alias != nil && node.Alias.Kind != yaml.AliasNode {
+			return f.UnmarshalYAML(node.Alias)
+		}
+		return nil
 	default:
 		return nil
 	}

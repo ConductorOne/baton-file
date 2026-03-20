@@ -67,7 +67,7 @@ func stripJSONComments(data []byte) []byte {
 				i++
 			}
 			if !closed {
-				i = len(data)
+				i = len(data) // unterminated block comment — consume rest; unmarshal will catch the error
 			}
 			continue
 		}

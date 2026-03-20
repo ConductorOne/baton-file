@@ -19,7 +19,8 @@ import (
 )
 
 type FileConnector struct {
-	inputFilePath string
+	inputFilePath  string
+	validatedData  *client.LoadedData
 }
 
 func (fc *FileConnector) Close() error { return nil }
@@ -55,10 +56,11 @@ func (fc *FileConnector) Validate(ctx context.Context) (annotations.Annotations,
 		return nil, fmt.Errorf("baton-file: error accessing input file: %w", err)
 	}
 
-	_, err = client.LoadFileData(fc.inputFilePath)
+	data, err := client.LoadFileData(fc.inputFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("baton-file: input file is invalid: %w", err)
 	}
+	fc.validatedData = data
 
 	return nil, nil
 }
@@ -66,11 +68,16 @@ func (fc *FileConnector) Validate(ctx context.Context) (annotations.Annotations,
 func (fc *FileConnector) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncerV2 {
 	l := ctxzap.Extract(ctx)
 
-	loadedData, err := client.LoadFileData(fc.inputFilePath)
-	if err != nil {
-		l.Error("baton-file: failed to load input file", zap.Error(err))
-		return nil
+	loadedData := fc.validatedData
+	if loadedData == nil {
+		var err error
+		loadedData, err = client.LoadFileData(fc.inputFilePath)
+		if err != nil {
+			l.Error("baton-file: failed to load input file", zap.Error(err))
+			return nil
+		}
 	}
+	fc.validatedData = nil
 
 	cache, err := newSyncCache(ctx, loadedData)
 	if err != nil {

@@ -1,0 +1,9 @@
+record_type,id,display_name,email,status,type,profile.department,profile.title,resource_type,trait,description,resource_id,entitlement_slug,principal_id
+user,alex.taylor,Alex Taylor,alex.taylor@example.com,enabled,human,Engineering,Software Engineer,,,,,,
+user,sam.johnson,Sam Johnson,sam.johnson@example.com,enabled,human,Marketing,Marketing Manager,,,,,,
+resource,engineering,Engineering,,,,,,team,group,Engineering team,,,
+resource,viewer,Viewer,,,,,,role,role,Read-only access across the platform,,,
+entitlement,,Member,,,,,,,,,engineering,member,
+entitlement,,Assigned,,,,,,,,,viewer,assigned,
+direct_user_grant,,,,,,,,,,,engineering,member,alex.taylor
+direct_user_grant,,,,,,,,,,,viewer,assigned,sam.johnson

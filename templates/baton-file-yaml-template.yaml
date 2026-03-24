@@ -1,0 +1,137 @@
+users:
+  # Required: id, display_name
+  - id: jane.smith                        # REQUIRED
+    display_name: Jane Smith              # REQUIRED
+    email: jane.smith@example.com
+    status: enabled
+    type: human
+    last_login: "2025-03-15T10:30:00Z"
+    login: jsmith
+    login_aliases:
+      - jane.s
+      - jsmith01
+    employee_id: "EMP-4821"
+    additional_emails:
+      - j.smith@example.org
+    mfa_enabled: true
+    sso_enabled: true
+    status_details: "Active since 2021"
+    profile:
+      department: Engineering
+      title: Senior Software Engineer
+
+  - id: john.doe
+    display_name: John Doe
+    email: john.doe@example.com
+    status: disabled
+    type: service
+    employee_id:
+      - "EMP-1137"
+      - "CONTRACTOR-502"
+    mfa_enabled: false
+    profile:
+      department: Platform
+
+  - id: maria.garcia
+    display_name: Maria Garcia
+    email: maria.garcia@example.com
+    status: active
+
+resources:
+  # Required: resource_type, trait, id, display_name
+  - resource_type: organization            # REQUIRED
+    trait: group                            # REQUIRED (group, role, app, or secret)
+    id: acme-org                           # REQUIRED
+    display_name: Acme Corp                # REQUIRED
+    description: Top-level organization
+    profile:
+      region: us-east-1
+
+  - resource_type: team
+    trait: group
+    id: engineering
+    display_name: Engineering
+    parent_resource: acme-org
+    profile:
+      slack_channel: "#eng-general"
+
+  - resource_type: role
+    trait: role
+    id: platform-admin
+    display_name: Platform Admin
+    description: Full administrative access to platform resources
+    profile:
+      level: "3"
+
+  - resource_type: repository
+    trait: app
+    id: api-service
+    display_name: api-service
+    parent_resource: acme-org
+    profile:
+      language: Go
+
+  - resource_type: api_key
+    trait: secret
+    id: deploy-token-1
+    display_name: Production Deploy Token
+    description: CI/CD deployment credential for api-service
+    parent_resource: api-service
+    created_at: "2025-01-10T00:00:00Z"
+    expires_at: "2026-01-10T00:00:00Z"
+    created_by: "user:jane.smith"
+    identity: "repository:api-service"
+
+entitlements:
+  # Required: resource_id, entitlement_slug
+  - resource_id: engineering               # REQUIRED
+    entitlement_slug: member               # REQUIRED
+    display_name: Team Member
+    description: Member of the engineering team
+
+  - resource_id: platform-admin
+    entitlement_slug: assigned
+    display_name: Role Assigned
+    description: Assigned the platform admin role
+
+  - resource_id: api-service
+    entitlement_slug: read
+    display_name: Read Access
+    description: Read access to the api-service repository
+
+  - resource_id: api-service
+    entitlement_slug: write
+    display_name: Write Access
+    description: Write access to the api-service repository
+
+direct_user_grants:
+  # Required: principal_id, resource_id, entitlement_slug
+  - principal_id: jane.smith               # REQUIRED
+    resource_id: engineering               # REQUIRED
+    entitlement_slug: member               # REQUIRED
+
+  - principal_id: john.doe
+    resource_id: engineering
+    entitlement_slug: member
+
+  - principal_id: jane.smith
+    resource_id: platform-admin
+    entitlement_slug: assigned
+
+  - principal_id: maria.garcia
+    resource_id: api-service
+    entitlement_slug: read
+
+grant_inheritance_mappings:
+  # Required: all fields
+  - principal_resource_id: engineering     # REQUIRED
+    principal_entitlement_slug: member     # REQUIRED
+    inherited_resource_id: api-service     # REQUIRED
+    inherited_entitlement_slug: read       # REQUIRED
+    inheritance_depth: full                # REQUIRED (full or shallow)
+
+  - principal_resource_id: engineering
+    principal_entitlement_slug: member
+    inherited_resource_id: platform-admin
+    inherited_entitlement_slug: assigned
+    inheritance_depth: shallow

@@ -1,0 +1,23 @@
+users:
+  - id: admin
+    display_name: Admin User
+    email: admin@example.com
+    status: enabled
+
+resources:
+  - resource_type: team
+    trait: group
+    id: default_team
+    display_name: Default Team
+
+entitlements:
+  - resource_id: default_team
+    entitlement_slug: member
+    display_name: Member
+
+direct_user_grants:
+  - principal_id: admin
+    resource_id: default_team
+    entitlement_slug: member
+
+grant_inheritance_mappings: []

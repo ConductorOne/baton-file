@@ -1,103 +1,94 @@
-# `baton-file` Connector: Excel (`.xlsx`) Instructions
+# Excel (XLSX) Input Format
 
-This document provides detailed instructions on how to structure your data within a Microsoft Excel (`.xlsx`) file for use with the `baton-file` connector.
+**Templates:** The XLSX template ships with an `Instructions` sheet (full field reference) and a `Quickstart` sheet (step-by-step minimal setup). Required columns are noted in both sheets. See the `z/xlsx/` directory for per-sheet CSVs to assemble the workbook.
 
-## Overview
+## Breaking Changes
 
-The connector expects an `.xlsx` file containing specific sheets (tabs) named `users`, `resources`, `entitlements`, and `grants`. Each sheet must have a header row defining the columns.
+- Sheet `Grants` is no longer supported → replaced by `Direct User Grants` and `Grant Inheritance Mappings` sheets
+- Users sheet: `Name` column → `ID`
+- Resources sheet: `Name` → `ID`, `Resource Function` → `Trait`
+- Entitlements sheet: `Resource Name` → `Resource ID`, `Entitlement` → `Entitlement Slug`
+- Old column/sheet names produce clear error messages with migration guidance
 
-*   **Column Order:** The order of columns within a sheet does not matter.
-*   **Header Case:** Standard header names (e.g., "Display Name", "Resource Type") are matched case-insensitively.
-*   **Profile Headers:** Special `Profile: *` headers in the `users` sheet are case-sensitive *after* the "Profile: " prefix.
-*   **Required Sheets:** While all four sheets are processed if present, the connector can function if some are missing (e.g., if you only have users and resources). However, grants require principals (users/resources) and entitlements to be defined.
-*   **Template:** A template file is available at [`templates/template.xlsx`](../templates/template.xlsx).
+## Sheet Names
 
-## Sheet Definitions
+Sheet names use Title Case with spaces. Lowercase names are also accepted for backward compatibility with the three original sheets.
 
-### Sheet: `users`
+| Sheet | Description |
+|-------|-------------|
+| `Instructions` | Read-only instructions (ignored by the connector) |
+| `Users` | User definitions |
+| `Resources` | Non-user resource definitions |
+| `Entitlements` | Entitlement definitions |
+| `Direct User Grants` | Direct user-to-entitlement grants |
+| `Grant Inheritance Mappings` | Grant inheritance between resources |
 
-**Purpose:** Defines all user principals, including regular users and service accounts. User data must *only* be defined in this sheet.
+## Users Sheet
 
-**Required Columns:**
+| Column | Required | Description |
+|--------|----------|-------------|
+| `ID` | yes | Unique user identifier |
+| `Display Name` | yes | Display name |
+| `Email` | no | Primary email address |
+| `Status` | no | `enabled`, `active`, `disabled`, `inactive`, `suspended`, `deleted` |
+| `Type` | no | `human` or `service`/`system`/`bot`/`machine` |
+| `Last Login` | no | Last login timestamp (multi-format) |
+| `Login` | no | Login username |
+| `Login Aliases` | no | Comma-separated alternative login identifiers |
+| `Employee ID` | no | Comma-separated employee identifier(s) |
+| `Additional Emails` | no | Comma-separated non-primary email addresses |
+| `MFA Enabled` | no | `true`/`false` |
+| `SSO Enabled` | no | `true`/`false` |
+| `Status Details` | no | Human-readable status explanation |
+| `Profile: {key}` | no | Dynamic profile columns (e.g., `Profile: department`) |
 
-*   `Name`: (Text) The unique identifier for the user within the system. This is used as the primary key and for linking in the `grants` sheet. *Example: `alice.admin`, `svc.data.agent`*
-*   `Display Name`: (Text) The user's full name or display name shown in Baton/ConductorOne. *Example: `Alice Admin`, `Data Agent Service Acct`*
+## Resources Sheet
 
-**Optional Columns:**
+| Column | Required | Description |
+|--------|----------|-------------|
+| `Resource Type` | yes | Resource type string |
+| `Trait` | yes | `group`, `role`, `app`, `secret`, `user` |
+| `ID` | yes | Unique resource identifier |
+| `Display Name` | yes | Display name |
+| `Description` | no | Description |
+| `Parent Resource` | no | ID of the parent resource |
+| `Profile: {key}` | no | Dynamic profile columns (e.g., `Profile: region`) |
+| `Created At` | no | Secret trait: creation timestamp |
+| `Expires At` | no | Secret trait: expiration timestamp |
+| `Created By` | no | Secret trait: creator reference (`type:id`) |
+| `Identity` | no | Secret trait: identity reference (`type:id`) |
 
-*   `Email`: (Text) The user's primary email address. *Example: `alice.admin@example.com`*
-*   `Status`: (Text) The user's account status. Common values: `enabled`, `active`, `inactive`, `disabled`, `suspended`. If omitted or unrecognized, defaults to `enabled`. *Example: `enabled`, `disabled`*
-*   `Last Login`: (Text) The date the user last logged in, in `MM/DD/YYYY` format. *Example: `04/01/2025`*
-*   `Type`: (Text) The type of user account. Common values: `human`, `user`, `person`, `service`, `system`, `bot`, `machine`. If omitted or unrecognized, defaults to `human`. *Example: `human`, `service`*
-*   `Profile: *`: (Text) Any number of additional columns starting *exactly* with the prefix `Profile: ` (note the space). The text *after* this prefix becomes the key (case-sensitive) in the user's profile map in Baton. Values should be text. *Example Headers: `Profile: Department`, `Profile: Title`, `Profile: EmployeeID`*
+### Profile Columns
 
-**Example Row:**
+Profile columns use the format `Profile: key_name` as the header. The key is lowercased and stripped of the prefix. For example, a column named `Profile: slack_channel` adds `{"slack_channel": "value"}` to the profile map.
 
-| Name             | Display Name     | Email                      | Status   | Last Login | Type    | Profile: Department | Profile: Title      |
-| :--------------- | :--------------- | :------------------------- | :------- |:-----------| :------ | :------------------ | :------------------ |
-| `dave.developer` | `Dave Developer` | `dave.developer@example.com` | `active` | 04/01/2025 | `human` | `Engineering`       | `Software Engineer` |
+## Entitlements Sheet
 
-### Sheet: `resources`
+| Column | Required | Description |
+|--------|----------|-------------|
+| `Resource ID` | yes | ID of the resource this entitlement is on |
+| `Entitlement Slug` | yes | Entitlement slug |
+| `Display Name` | no | Display name |
+| `Description` | no | Description |
 
-**Purpose:** Defines all non-user resources (e.g., groups, roles, applications, workspaces) and assigns their primary Baton trait.
+## Direct User Grants Sheet
 
-**Required Columns:**
+| Column | Required | Description |
+|--------|----------|-------------|
+| `Principal ID` | yes | User ID receiving the grant |
+| `Resource ID` | yes | Resource ID owning the entitlement |
+| `Entitlement Slug` | yes | Entitlement slug being granted |
 
-*   `Resource Type`: (Text) The type name for this category of resource. Used internally and for display. Choose consistent names for related resources. *Example: `workspace`, `team`, `role`, `application`*
-*   `Resource Function`: (Text) Defines the primary Baton trait for *all* resources of the corresponding `Resource Type`. Valid values (case-insensitive): `group`, `role`, `app`, `secret`. If a resource type should not have a specific trait, provide an empty value or a value not in the valid list (it will default to `TRAIT_UNSPECIFIED`). *Example: `group`, `role`*
-*   `Name`: (Text) The unique identifier for this specific resource instance. Used as the primary key and for linking in `entitlements` and `grants`. *Example: `development_workspace`, `admins_team`, `billing_app_admin_role`*
-*   `Display Name`: (Text) The human-readable name for this resource instance. *Example: `Development Workspace`, `Administrators Team`, `Billing App Admin Role`*
+## Grant Inheritance Mappings Sheet
 
-**Optional Columns:**
+| Column | Required | Description |
+|--------|----------|-------------|
+| `Principal Resource ID` | yes | Resource whose membership triggers inheritance |
+| `Principal Entitlement Slug` | yes | Entitlement slug on the principal resource |
+| `Inherited Resource ID` | yes | Resource whose entitlement is inherited |
+| `Inherited Entitlement Slug` | yes | Entitlement slug inherited |
+| `Inheritance Depth` | yes | `full` or `shallow` |
 
-*   `Description`: (Text) A description for this resource instance. *Example: `Primary AWS development account`*
-*   `Parent Resource`: (Text) The unique identifier (`Name`) of the parent resource. The parent must be defined in either the `users` or `resources` sheet. If omitted, the resource has no parent. *Example: `development_workspace`*
+## Date Formats
 
-**Example Row:**
-
-| Resource Type | Resource Function | Name          | Display Name  | Description                 | Parent Resource |
-| :------------ | :---------------- | :------------ | :------------ | :-------------------------- | :-------------- |
-| `team`        | `group`           | `app_dev_team` | `App Dev Team` | `Primary app development team` |                 |
-| `role`        | `role`            | `dev_lead`    | `Dev Lead`    | `Development lead role`     | `app_dev_team`  |
-
-### Sheet: `entitlements`
-
-**Purpose:** Defines specific permissions, membership types, or role assignments (entitlements) that can be granted *on* resources defined in the `resources` sheet.
-
-**Required Columns:**
-
-*   `Resource Name`: (Text) The unique identifier (`Name`) of the resource (from the `resources` sheet) to which this entitlement applies. *Example: `admins_team`, `development_workspace`*
-*   `Entitlement`: (Text) The specific entitlement *slug* (short identifier) being defined on the resource. This is used for linking in the `grants` sheet. *Example: `member`, `owner`, `admin`, `read`, `write`, `assigned`*
-*   `Entitlement Display Name`: (Text) The human-readable name for the entitlement, often matching the slug or providing a more descriptive name. *Example: `Member`, `Owner`, `Admin Access`, `Assigned`*
-
-**Optional Columns:**
-
-*   `Entitlement Description`: (Text) A description of the entitlement. *Example: `Membership in the Admins team`*
-
-**Example Row:**
-
-| Resource Name | Entitlement | Entitlement Display Name | Entitlement Description          |
-| :------------ | :---------- | :----------------------- | :------------------------------- |
-| `app_dev_team` | `member`    | `Member`                 | `Membership in App Dev Team`   |
-| `billing_app` | `admin`     | `Admin Access`           | `Full administrative privileges` |
-
-### Sheet: `grants`
-
-**Purpose:** Defines which principals (users or other resources like groups/roles) are granted which entitlements.
-
-**Required Columns:**
-
-*   `Principal Receiving Grant`: (Text) The unique identifier (`Name`) of the user (from `users`) or resource (from `resources`) receiving the grant. For group/role-based expansion, this can also be an entitlement key (see note below). *Example: `alice.admin`, `app_dev_team`, `dev_lead:assigned`*
-*   `Entitlement Granted to Principal`: (Text) The full identifier of the entitlement being granted, in the format `resource_name:entitlement_slug` (matching data from the `entitlements` sheet). *Example: `app_dev_team:member`, `billing_app:admin`*
-
-**Important Note on `Principal Receiving Grant` for Grant Expansion:**
-
-*   **Direct Grant (No Expansion):** If you list the principal's `Name` (e.g., `alice.admin`, `app_dev_team`), a direct grant is created.
-*   **Grant Expansion (Groups/Roles):** To leverage Baton's grant expansion feature (where granting access to a group/role implicitly grants it to its members/assignees), the `Principal Receiving Grant` *must* be the specific *entitlement key* that defines membership or assignment for that group/role. This key should be in the format `resource_name:entitlement_slug` (e.g., `app_dev_team:member`, `dev_lead:assigned`). Simply using the resource name (e.g., `app_dev_team`) will create the grant but *not* enable expansion based on its members/assignees.
-
-**Example Row:**
-
-| Principal Receiving Grant | Entitlement Granted to Principal |
-| :------------------------ | :------------------------------- |
-| `dave.developer`          | `app_dev_team:member`            |
-| `app_dev_team:member`     | `billing_app:read`               | *<-- Grant to members of app_dev_team* 
+Timestamps accept multiple formats including ISO 8601, US dates (MM/DD/YYYY), and Unix timestamps. Slash-format dates assume US format. European users should use ISO 8601 (`YYYY-MM-DD`).

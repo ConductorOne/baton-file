@@ -1,0 +1,59 @@
+# Quickstart: minimal baton-file configuration
+# Two users, one group, one role, member entitlements, and direct grants.
+# See baton-file-yaml-template.yaml for the full set of fields.
+
+users:
+  # Required: id, display_name
+  - id: alex.taylor                        # REQUIRED
+    display_name: Alex Taylor              # REQUIRED
+    email: alex.taylor@example.com
+    status: enabled
+    type: human
+    profile:
+      department: Engineering
+      title: Software Engineer
+
+  - id: sam.johnson
+    display_name: Sam Johnson
+    email: sam.johnson@example.com
+    status: enabled
+    type: human
+    profile:
+      department: Marketing
+      title: Marketing Manager
+
+resources:
+  # Required: resource_type, trait, id, display_name
+  - resource_type: team                    # REQUIRED
+    trait: group                            # REQUIRED (group, role, app, or secret)
+    id: engineering                        # REQUIRED
+    display_name: Engineering              # REQUIRED
+    description: Engineering team
+
+  - resource_type: role
+    trait: role
+    id: viewer
+    display_name: Viewer
+    description: Read-only access across the platform
+
+entitlements:
+  # Required: resource_id, entitlement_slug
+  - resource_id: engineering               # REQUIRED
+    entitlement_slug: member               # REQUIRED
+    display_name: Member
+    description: Member of the engineering team
+
+  - resource_id: viewer
+    entitlement_slug: assigned
+    display_name: Assigned
+    description: Assigned the viewer role
+
+direct_user_grants:
+  # Required: principal_id, resource_id, entitlement_slug
+  - principal_id: alex.taylor              # REQUIRED
+    resource_id: engineering               # REQUIRED
+    entitlement_slug: member               # REQUIRED
+
+  - principal_id: sam.johnson
+    resource_id: viewer
+    entitlement_slug: assigned

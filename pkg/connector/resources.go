@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
@@ -13,6 +14,8 @@ import (
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
 )
+
+const defaultGrantPageSize = 1000
 
 type resourceBuilder struct {
 	cache        *syncCache
@@ -156,7 +159,35 @@ func (b *resourceBuilder) Grants(ctx context.Context, resource *v2.Resource,
 		return allGrants[i].GetEntitlement().GetId() < allGrants[j].GetEntitlement().GetId()
 	})
 
-	return allGrants, &rs.SyncOpResults{}, nil
+	pageSize := defaultGrantPageSize
+	if opts.PageToken.Size > 0 {
+		pageSize = opts.PageToken.Size
+	}
+
+	offset := 0
+	if opts.PageToken.Token != "" {
+		var err error
+		offset, err = strconv.Atoi(opts.PageToken.Token)
+		if err != nil {
+			return nil, nil, fmt.Errorf("baton-file: invalid grants page token: %w", err)
+		}
+	}
+
+	if offset > len(allGrants) {
+		offset = len(allGrants)
+	}
+
+	end := offset + pageSize
+	if end > len(allGrants) {
+		end = len(allGrants)
+	}
+
+	var nextPageToken string
+	if end < len(allGrants) {
+		nextPageToken = strconv.Itoa(end)
+	}
+
+	return allGrants[offset:end], &rs.SyncOpResults{NextPageToken: nextPageToken}, nil
 }
 
 func buildUserResource(ctx context.Context, userData client.UserData,

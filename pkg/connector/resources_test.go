@@ -131,6 +131,53 @@ func TestPaginate_InvalidToken(t *testing.T) {
 	}
 }
 
+// Grants() behavior tests.
+
+func TestGrants_InheritanceMapping_ExpandableAnnotation(t *testing.T) {
+	ctx := context.Background()
+	data := &client.LoadedData{
+		Resources: []client.ResourceData{
+			{ID: "team-a", ResourceType: "group", Trait: "group", DisplayName: "Team A"},
+			{ID: "role-x", ResourceType: "role", Trait: "role", DisplayName: "Role X"},
+		},
+		Entitlements: []client.EntitlementData{
+			{ResourceID: "team-a", EntitlementSlug: "member", DisplayName: "Member"},
+			{ResourceID: "role-x", EntitlementSlug: "assigned", DisplayName: "Assigned"},
+		},
+		GrantInheritanceMappings: []client.GrantInheritanceMapping{
+			{
+				PrincipalResourceID:      "team-a",
+				PrincipalEntitlementSlug: "member",
+				InheritedResourceID:      "role-x",
+				InheritedEntitlementSlug: "assigned",
+				InheritanceDepth:         "shallow",
+			},
+		},
+	}
+	cache, err := newSyncCache(ctx, data)
+	require.NoError(t, err)
+
+	b := &resourceBuilder{cache: cache, resourceType: cache.resourceTypes["role"]}
+	grants := allGrants(t, b, cache.resources["role-x"])
+
+	require.Len(t, grants, 1)
+	require.Equal(t, "team-a", grants[0].GetPrincipal().GetId().GetResource())
+
+	// Verify GrantExpandable annotation is present with Shallow=true.
+	var expandable *v2.GrantExpandable
+	for _, ann := range grants[0].GetAnnotations() {
+		var ge v2.GrantExpandable
+		if ann.MessageIs(&ge) {
+			if err := ann.UnmarshalTo(&ge); err == nil {
+				expandable = &ge
+				break
+			}
+		}
+	}
+	require.NotNil(t, expandable, "inheritance mapping grant must have GrantExpandable annotation")
+	require.True(t, expandable.GetShallow(), "InheritanceDepth=shallow must set Shallow=true on the annotation")
+}
+
 // Grants() pagination tests.
 
 func TestGrants_PaginatesCorrectly(t *testing.T) {

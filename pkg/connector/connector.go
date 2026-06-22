@@ -316,18 +316,18 @@ func newSyncCache(ctx context.Context, data *client.LoadedData) (*syncCache, err
 	for i, g := range data.DirectUserGrants {
 		res, ok := c.resources[g.ResourceID]
 		if !ok {
-			l.Debug("baton-file: skipping direct grant, resource not found",
+			l.Warn("baton-file: skipping direct grant, resource not found",
 				zap.String("resource_id", g.ResourceID), zap.Int("index", i))
 			continue
 		}
 		principalRes, ok := c.resources[g.PrincipalID]
 		if !ok {
-			l.Debug("baton-file: skipping direct grant, principal id not found",
+			l.Warn("baton-file: skipping direct grant, principal id not found",
 				zap.String("principal_id", g.PrincipalID), zap.Int("index", i))
 			continue
 		}
 		if principalRes.GetId().GetResourceType() != userResourceType.GetId() {
-			l.Debug("baton-file: skipping direct grant, principal is not a user",
+			l.Warn("baton-file: skipping direct grant, principal is not a user",
 				zap.String("principal_id", g.PrincipalID),
 				zap.String("actual_type", principalRes.GetId().GetResourceType()),
 				zap.Int("index", i))
@@ -335,7 +335,7 @@ func newSyncCache(ctx context.Context, data *client.LoadedData) (*syncCache, err
 		}
 		entKey := fmt.Sprintf("%s:%s", g.ResourceID, g.EntitlementSlug)
 		if _, ok := c.entitlements[entKey]; !ok {
-			l.Debug("baton-file: skipping direct grant, entitlement not found",
+			l.Warn("baton-file: skipping direct grant, entitlement not found",
 				zap.String("entitlement_key", entKey), zap.Int("index", i))
 			continue
 		}
@@ -350,31 +350,31 @@ func newSyncCache(ctx context.Context, data *client.LoadedData) (*syncCache, err
 	for i, m := range data.GrantInheritanceMappings {
 		res, ok := c.resources[m.InheritedResourceID]
 		if !ok {
-			l.Debug("baton-file: skipping inheritance mapping, resource not found",
+			l.Warn("baton-file: skipping inheritance mapping, resource not found",
 				zap.String("resource_id", m.InheritedResourceID), zap.Int("index", i))
 			continue
 		}
 		if m.InheritanceDepth != "full" && m.InheritanceDepth != "shallow" {
-			l.Debug("baton-file: invalid inheritance_depth, must be \"full\" or \"shallow\"",
+			l.Warn("baton-file: invalid inheritance_depth, must be \"full\" or \"shallow\"",
 				zap.String("value", m.InheritanceDepth), zap.Int("index", i))
 			continue
 		}
 		principalResource, ok := c.resources[m.PrincipalResourceID]
 		if !ok {
-			l.Debug("baton-file: skipping inheritance mapping, principal resource not found",
+			l.Warn("baton-file: skipping inheritance mapping, principal resource not found",
 				zap.String("principal_resource_id", m.PrincipalResourceID), zap.Int("index", i))
 			continue
 		}
 		membershipKey := fmt.Sprintf("%s:%s", m.PrincipalResourceID, m.PrincipalEntitlementSlug)
 		membershipEntitlement, ok := c.entitlements[membershipKey]
 		if !ok {
-			l.Debug("baton-file: skipping inheritance mapping, membership entitlement not found",
+			l.Warn("baton-file: skipping inheritance mapping, membership entitlement not found",
 				zap.String("membership_key", membershipKey), zap.Int("index", i))
 			continue
 		}
 		inheritedEntKey := fmt.Sprintf("%s:%s", m.InheritedResourceID, m.InheritedEntitlementSlug)
 		if _, ok := c.entitlements[inheritedEntKey]; !ok {
-			l.Debug("baton-file: skipping inheritance mapping, inherited entitlement not found",
+			l.Warn("baton-file: skipping inheritance mapping, inherited entitlement not found",
 				zap.String("inherited_entitlement_key", inheritedEntKey), zap.Int("index", i))
 			continue
 		}

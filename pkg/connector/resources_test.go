@@ -125,7 +125,7 @@ func TestPaginate_StaleOffset(t *testing.T) {
 
 func TestPaginate_InvalidToken(t *testing.T) {
 	items := []int{1, 2, 3}
-	for _, tok := range []string{"not-a-number", "abc", "-1"} {
+	for _, tok := range []string{"not-a-number", "abc", "-1", "0"} {
 		_, _, err := paginate(items, tok, 0)
 		require.Error(t, err, "token %q should return error", tok)
 	}
@@ -224,7 +224,7 @@ func TestGrants_InvalidPageToken(t *testing.T) {
 	b := &resourceBuilder{cache: cache, resourceType: cache.resourceTypes["group"]}
 	res := cache.resources["res1"]
 
-	for _, tok := range []string{"not-a-number", "-1"} {
+	for _, tok := range []string{"not-a-number", "-1", "0"} {
 		opts := rs.SyncOpAttrs{PageToken: pagination.Token{Token: tok}}
 		_, _, err := b.Grants(ctx, res, opts)
 		require.Error(t, err, "token %q should return error", tok)

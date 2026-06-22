@@ -35,8 +35,8 @@ func paginate[T any](items []T, tokenStr string, tokenSize int) ([]T, string, er
 		if err != nil {
 			return nil, "", fmt.Errorf("baton-file: invalid page token %q: %w", tokenStr, err)
 		}
-		if parsed < 0 {
-			return nil, "", fmt.Errorf("baton-file: negative page token %q", tokenStr)
+		if parsed <= 0 {
+			return nil, "", fmt.Errorf("baton-file: invalid page token %q: must be a positive integer", tokenStr)
 		}
 		offset = parsed
 	}

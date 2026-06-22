@@ -3,16 +3,64 @@ package connector
 import (
 	"context"
 	"fmt"
-	"sort"
+	"strconv"
 	"strings"
 
-	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
-	"github.com/conductorone/baton-sdk/pkg/types/grant"
-	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/conductorone/baton-file/pkg/client"
+	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
+	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
 )
+
+const pageSize = 1000
+
+// clampPageSize returns requested if it is within (0, pageSize], otherwise
+// returns pageSize. Guards against zero (SDK default) and oversized requests.
+func clampPageSize(requested int) int {
+	if requested <= 0 || requested > pageSize {
+		return pageSize
+	}
+	return requested
+}
+
+func paginate[T any](items []T, tokenStr string, tokenSize int) ([]T, string, error) {
+	// SDK sends Size=0 during sync_full; clamp converts it to pageSize so we never return an empty page.
+	size := clampPageSize(tokenSize)
+
+	// Empty token means first page; non-empty token is the numeric offset where this page starts.
+	offset := 0
+	if tokenStr != "" {
+		parsed, err := strconv.Atoi(tokenStr)
+		if err != nil {
+			return nil, "", fmt.Errorf("baton-file: invalid page token %q: %w", tokenStr, err)
+		}
+		if parsed < 0 {
+			return nil, "", fmt.Errorf("baton-file: negative page token %q", tokenStr)
+		}
+		offset = parsed
+	}
+
+	// Guard against a stale checkpoint: if the file was replaced with fewer
+	// items after an interrupted sync, offset may exceed the new slice length.
+	// Clamping here prevents items[offset:end] from panicking.
+	if offset > len(items) {
+		offset = len(items)
+	}
+
+	// Clamp end to the slice length so the last page returns only what's left.
+	end := offset + size
+	if end > len(items) {
+		end = len(items)
+	}
+
+	// Empty next token signals the SDK that there are no more pages.
+	var next string
+	if end < len(items) {
+		next = strconv.Itoa(end)
+	}
+	return items[offset:end], next, nil
+}
 
 type resourceBuilder struct {
 	cache        *syncCache
@@ -23,140 +71,34 @@ func (b *resourceBuilder) ResourceType(ctx context.Context) *v2.ResourceType {
 	return b.resourceType
 }
 
-func (b *resourceBuilder) List(ctx context.Context, parentResourceID *v2.ResourceId,
+func (b *resourceBuilder) List(_ context.Context, parentResourceID *v2.ResourceId,
 	opts rs.SyncOpAttrs) ([]*v2.Resource, *rs.SyncOpResults, error) {
-	// Full scan is fine — resource types are single-digit and total resources
-	// are at most low thousands for a file-based connector.
-	//
-	// When parentResourceID is nil the SDK is requesting top-level resources,
-	// so we exclude any resource that has a parent. The SDK calls List() again
-	// with the parent's ID to fetch nested children.
-	var rv []*v2.Resource
-	for _, res := range b.cache.resources {
-		if res.GetId().GetResourceType() != b.resourceType.GetId() {
-			continue
-		}
-		if parentResourceID != nil {
-			if res.GetParentResourceId() == nil ||
-				res.GetParentResourceId().GetResourceType() != parentResourceID.GetResourceType() ||
-				res.GetParentResourceId().GetResource() != parentResourceID.GetResource() {
-				continue
-			}
-		} else if res.GetParentResourceId() != nil {
-			continue
-		}
-		rv = append(rv, res)
+	resources := b.cache.listIndex[listKey(b.resourceType.GetId(), parentResourceID)]
+	page, next, err := paginate(resources, opts.PageToken.Token, opts.PageToken.Size)
+	if err != nil {
+		return nil, nil, err
 	}
-	sort.SliceStable(rv, func(i, j int) bool {
-		return rv[i].GetId().GetResource() < rv[j].GetId().GetResource()
-	})
-	return rv, &rs.SyncOpResults{}, nil
+	return page, &rs.SyncOpResults{NextPageToken: next}, nil
 }
 
-// Same full-scan rationale as List() — see comment above.
-func (b *resourceBuilder) Entitlements(ctx context.Context, resource *v2.Resource,
+func (b *resourceBuilder) Entitlements(_ context.Context, resource *v2.Resource,
 	opts rs.SyncOpAttrs) ([]*v2.Entitlement, *rs.SyncOpResults, error) {
-	var rv []*v2.Entitlement
-	for _, ent := range b.cache.entitlements {
-		if ent.GetResource().GetId().GetResourceType() == resource.GetId().GetResourceType() &&
-			ent.GetResource().GetId().GetResource() == resource.GetId().GetResource() {
-			rv = append(rv, ent)
-		}
+	ents := b.cache.entIndex[resource.GetId().GetResource()]
+	page, next, err := paginate(ents, opts.PageToken.Token, opts.PageToken.Size)
+	if err != nil {
+		return nil, nil, err
 	}
-	sort.SliceStable(rv, func(i, j int) bool {
-		return rv[i].GetSlug() < rv[j].GetSlug()
-	})
-	return rv, &rs.SyncOpResults{}, nil
+	return page, &rs.SyncOpResults{NextPageToken: next}, nil
 }
 
-// Same full-scan rationale as List() — see comment above.
-func (b *resourceBuilder) Grants(ctx context.Context, resource *v2.Resource,
+func (b *resourceBuilder) Grants(_ context.Context, resource *v2.Resource,
 	opts rs.SyncOpAttrs) ([]*v2.Grant, *rs.SyncOpResults, error) {
-	l := ctxzap.Extract(ctx)
-	var allGrants []*v2.Grant
-
-	for i, g := range b.cache.loadedData.DirectUserGrants {
-		if g.ResourceID != resource.GetId().GetResource() {
-			continue
-		}
-
-		principalRes, ok := b.cache.resources[g.PrincipalID]
-		if !ok || principalRes.GetId().GetResourceType() != userResourceType.GetId() {
-			l.Warn("baton-file: skipping direct grant, principal not found in users",
-				zap.String("principal_id", g.PrincipalID), zap.Int("index", i))
-			continue
-		}
-
-		entKey := fmt.Sprintf("%s:%s", g.ResourceID, g.EntitlementSlug)
-		if _, ok := b.cache.entitlements[entKey]; !ok {
-			l.Warn("baton-file: skipping direct grant, entitlement not found",
-				zap.String("entitlement_key", entKey), zap.Int("index", i))
-			continue
-		}
-
-		principalId := v2.ResourceId_builder{
-			ResourceType: userResourceType.GetId(),
-			Resource:     g.PrincipalID,
-		}.Build()
-
-		newGrant := grant.NewGrant(resource, g.EntitlementSlug, principalId)
-		allGrants = append(allGrants, newGrant)
+	grants := b.cache.grantsIndex[resource.GetId().GetResource()]
+	page, next, err := paginate(grants, opts.PageToken.Token, opts.PageToken.Size)
+	if err != nil {
+		return nil, nil, err
 	}
-
-	for i, m := range b.cache.loadedData.GrantInheritanceMappings {
-		if m.InheritedResourceID != resource.GetId().GetResource() {
-			continue
-		}
-
-		if m.InheritanceDepth != "full" && m.InheritanceDepth != "shallow" {
-			l.Warn("baton-file: invalid inheritance_depth, must be \"full\" or \"shallow\"",
-				zap.String("value", m.InheritanceDepth), zap.Int("index", i))
-			continue
-		}
-
-		principalResource, ok := b.cache.resources[m.PrincipalResourceID]
-		if !ok {
-			l.Warn("baton-file: skipping inheritance mapping, principal resource not found",
-				zap.String("principal_resource_id", m.PrincipalResourceID), zap.Int("index", i))
-			continue
-		}
-
-		membershipKey := fmt.Sprintf("%s:%s", m.PrincipalResourceID, m.PrincipalEntitlementSlug)
-		membershipEntitlement, ok := b.cache.entitlements[membershipKey]
-		if !ok {
-			l.Warn("baton-file: skipping inheritance mapping, membership entitlement not found",
-				zap.String("membership_key", membershipKey), zap.Int("index", i))
-			continue
-		}
-
-		expandable := v2.GrantExpandable_builder{
-			EntitlementIds: []string{membershipEntitlement.GetId()},
-			Shallow:        m.InheritanceDepth == "shallow",
-		}.Build()
-
-		newGrant := grant.NewGrant(
-			resource,
-			m.InheritedEntitlementSlug,
-			principalResource.GetId(),
-			grant.WithAnnotation(expandable),
-		)
-		allGrants = append(allGrants, newGrant)
-	}
-
-	// Sort by concatenated resource type/id rather than proto String() to
-	// ensure deterministic output across protobuf library versions.
-	sort.SliceStable(allGrants, func(i, j int) bool {
-		pi := allGrants[i].GetPrincipal().GetId()
-		pj := allGrants[j].GetPrincipal().GetId()
-		ki := pi.GetResourceType() + "/" + pi.GetResource()
-		kj := pj.GetResourceType() + "/" + pj.GetResource()
-		if ki != kj {
-			return ki < kj
-		}
-		return allGrants[i].GetEntitlement().GetId() < allGrants[j].GetEntitlement().GetId()
-	})
-
-	return allGrants, &rs.SyncOpResults{}, nil
+	return page, &rs.SyncOpResults{NextPageToken: next}, nil
 }
 
 func buildUserResource(ctx context.Context, userData client.UserData,
@@ -173,14 +115,12 @@ func buildUserResource(ctx context.Context, userData client.UserData,
 
 	userStatus := v2.UserTrait_Status_STATUS_ENABLED
 	switch strings.ToLower(userData.Status) {
-	case "enabled", "active":
-		userStatus = v2.UserTrait_Status_STATUS_ENABLED
+	case "enabled", "active", "":
+		// keep default (STATUS_ENABLED)
 	case "disabled", "inactive", "suspended":
 		userStatus = v2.UserTrait_Status_STATUS_DISABLED
 	case "deleted":
 		userStatus = v2.UserTrait_Status_STATUS_DELETED
-	case "":
-		// keep default
 	default:
 		l.Warn("baton-file: unknown user status, defaulting to enabled",
 			zap.String("user_id", userData.ID), zap.String("status", userData.Status))
@@ -189,7 +129,7 @@ func buildUserResource(ctx context.Context, userData client.UserData,
 	userAccountType := v2.UserTrait_ACCOUNT_TYPE_HUMAN
 	switch strings.ToLower(userData.Type) {
 	case "human", "":
-		userAccountType = v2.UserTrait_ACCOUNT_TYPE_HUMAN
+		// keep default (ACCOUNT_TYPE_HUMAN)
 	case "service", "system", "bot", "machine":
 		userAccountType = v2.UserTrait_ACCOUNT_TYPE_SERVICE
 	default:

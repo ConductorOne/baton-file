@@ -62,6 +62,11 @@ jobs:
           EOF
           ./connector --input /tmp/caps.yaml capabilities > baton_capabilities.json
           ./connector config > config_schema.json
+          # Assert all known traits appear in the output. If TraitMap grows, add the
+          # new trait to both the fixture above and this list.
+          for trait in TRAIT_USER TRAIT_GROUP TRAIT_ROLE TRAIT_APP TRAIT_SECRET; do
+            grep -q "$trait" baton_capabilities.json || { echo "ERROR: $trait missing from baton_capabilities.json — update the fixture in this workflow"; exit 1; }
+          done
 
       - name: Commit changes
         uses: EndBug/add-and-commit@v9

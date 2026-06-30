@@ -4,32 +4,49 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
+	"github.com/conductorone/baton-file/pkg/client"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/cli"
 	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
 	"github.com/conductorone/baton-sdk/pkg/types/entitlement"
+	sdkGrant "github.com/conductorone/baton-sdk/pkg/types/grant"
 	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
-	"github.com/conductorone/baton-file/pkg/client"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
 
 type FileConnector struct {
-	inputFilePath  string
-	validatedData  *client.LoadedData
+	inputFilePath string
+	validatedData *client.LoadedData
 }
 
 func (fc *FileConnector) Close() error { return nil }
 
 type syncCache struct {
-	loadedData    *client.LoadedData
 	resourceTypes map[string]*v2.ResourceType
 	resources     map[string]*v2.Resource
 	entitlements  map[string]*v2.Entitlement
+
+	// Pre-built indexes: constructed once in newSyncCache(), sorted, and reused
+	// on every SDK call. Values are pointers into resources/entitlements — no
+	// extra memory beyond the slice headers themselves.
+	listIndex   map[string][]*v2.Resource    // key: listKey(typeID, parent)
+	entIndex    map[string][]*v2.Entitlement // key: resourceID
+	grantsIndex map[string][]*v2.Grant       // key: resourceID
+}
+
+// listKey returns the lookup key for the listIndex.
+// top-level resources (no parent) use just the typeID.
+func listKey(typeID string, parent *v2.ResourceId) string {
+	if parent == nil {
+		return typeID
+	}
+	return typeID + "/" + parent.GetResourceType() + "/" + parent.GetResource()
 }
 
 func New(ctx context.Context, v *viper.Viper, opts *cli.ConnectorOpts) (connectorbuilder.ConnectorBuilderV2, []connectorbuilder.Opt, error) {
@@ -141,7 +158,7 @@ func (fc *FileConnector) ResourceSyncers(ctx context.Context) []connectorbuilder
 
 func newSyncCache(ctx context.Context, data *client.LoadedData) (*syncCache, error) {
 	l := ctxzap.Extract(ctx)
-	c := &syncCache{loadedData: data}
+	c := &syncCache{}
 
 	// 1. Discover resource types
 	c.resourceTypes = make(map[string]*v2.ResourceType)
@@ -289,6 +306,136 @@ func newSyncCache(ctx context.Context, data *client.LoadedData) (*syncCache, err
 		)
 		key := fmt.Sprintf("%s:%s", e.ResourceID, e.EntitlementSlug)
 		c.entitlements[key] = ent
+	}
+
+	// 7. Pre-build grants index.
+	// All grants are constructed and sorted once here, indexed by resource ID.
+	// Grants() becomes an O(1) lookup + slice — no per-page scan or sort.
+	c.grantsIndex = make(map[string][]*v2.Grant)
+
+	for i, g := range data.DirectUserGrants {
+		res, ok := c.resources[g.ResourceID]
+		if !ok {
+			l.Debug("baton-file: skipping direct grant, resource not found",
+				zap.String("resource_id", g.ResourceID), zap.Int("index", i))
+			continue
+		}
+		principalRes, ok := c.resources[g.PrincipalID]
+		if !ok {
+			l.Debug("baton-file: skipping direct grant, principal id not found",
+				zap.String("principal_id", g.PrincipalID), zap.Int("index", i))
+			continue
+		}
+		if principalRes.GetId().GetResourceType() != userResourceType.GetId() {
+			l.Debug("baton-file: skipping direct grant, principal is not a user",
+				zap.String("principal_id", g.PrincipalID),
+				zap.String("actual_type", principalRes.GetId().GetResourceType()),
+				zap.Int("index", i))
+			continue
+		}
+		entKey := fmt.Sprintf("%s:%s", g.ResourceID, g.EntitlementSlug)
+		if _, ok := c.entitlements[entKey]; !ok {
+			l.Debug("baton-file: skipping direct grant, entitlement not found",
+				zap.String("entitlement_key", entKey), zap.Int("index", i))
+			continue
+		}
+		principalId := v2.ResourceId_builder{
+			ResourceType: userResourceType.GetId(),
+			Resource:     g.PrincipalID,
+		}.Build()
+		c.grantsIndex[g.ResourceID] = append(c.grantsIndex[g.ResourceID],
+			sdkGrant.NewGrant(res, g.EntitlementSlug, principalId))
+	}
+
+	for i, m := range data.GrantInheritanceMappings {
+		res, ok := c.resources[m.InheritedResourceID]
+		if !ok {
+			l.Debug("baton-file: skipping inheritance mapping, resource not found",
+				zap.String("resource_id", m.InheritedResourceID), zap.Int("index", i))
+			continue
+		}
+		if m.InheritanceDepth != "full" && m.InheritanceDepth != "shallow" {
+			l.Debug("baton-file: invalid inheritance_depth, must be \"full\" or \"shallow\"",
+				zap.String("value", m.InheritanceDepth), zap.Int("index", i))
+			continue
+		}
+		principalResource, ok := c.resources[m.PrincipalResourceID]
+		if !ok {
+			l.Debug("baton-file: skipping inheritance mapping, principal resource not found",
+				zap.String("principal_resource_id", m.PrincipalResourceID), zap.Int("index", i))
+			continue
+		}
+		membershipKey := fmt.Sprintf("%s:%s", m.PrincipalResourceID, m.PrincipalEntitlementSlug)
+		membershipEntitlement, ok := c.entitlements[membershipKey]
+		if !ok {
+			l.Debug("baton-file: skipping inheritance mapping, membership entitlement not found",
+				zap.String("membership_key", membershipKey), zap.Int("index", i))
+			continue
+		}
+		inheritedEntKey := fmt.Sprintf("%s:%s", m.InheritedResourceID, m.InheritedEntitlementSlug)
+		if _, ok := c.entitlements[inheritedEntKey]; !ok {
+			l.Debug("baton-file: skipping inheritance mapping, inherited entitlement not found",
+				zap.String("inherited_entitlement_key", inheritedEntKey), zap.Int("index", i))
+			continue
+		}
+		expandable := v2.GrantExpandable_builder{
+			EntitlementIds: []string{membershipEntitlement.GetId()},
+			Shallow:        m.InheritanceDepth == "shallow",
+		}.Build()
+		c.grantsIndex[m.InheritedResourceID] = append(c.grantsIndex[m.InheritedResourceID],
+			sdkGrant.NewGrant(res, m.InheritedEntitlementSlug, principalResource.GetId(),
+				sdkGrant.WithAnnotation(expandable)))
+	}
+
+	// Sort grants once for stable pagination.
+	// Primary key: principal type + ID ("user/alice" < "user/bob").
+	// Tiebreaker: entitlement ID, so two grants to the same principal always
+	// appear in the same order across pages.
+	for resourceID := range c.grantsIndex {
+		grants := c.grantsIndex[resourceID]
+		sort.SliceStable(grants, func(left, right int) bool {
+			leftPrincipal := grants[left].GetPrincipal().GetId()
+			rightPrincipal := grants[right].GetPrincipal().GetId()
+			if leftPrincipal.GetResourceType() != rightPrincipal.GetResourceType() {
+				return leftPrincipal.GetResourceType() < rightPrincipal.GetResourceType()
+			}
+			if leftPrincipal.GetResource() != rightPrincipal.GetResource() {
+				return leftPrincipal.GetResource() < rightPrincipal.GetResource()
+			}
+			return grants[left].GetEntitlement().GetId() < grants[right].GetEntitlement().GetId()
+		})
+	}
+
+	// 8. Pre-build list index so List() is an O(1) lookup instead of a full map scan.
+	// Key is typeID for top-level resources (e.g. "group"), or
+	// typeID+"/"+parentType+"/"+parentID for children (e.g. "team/org/org1").
+	// Sorted by resource ID for stable pagination across pages.
+	c.listIndex = make(map[string][]*v2.Resource)
+	for _, res := range c.resources {
+		key := listKey(res.GetId().GetResourceType(), res.GetParentResourceId())
+		c.listIndex[key] = append(c.listIndex[key], res)
+	}
+	for key := range c.listIndex {
+		slice := c.listIndex[key]
+		sort.SliceStable(slice, func(i, j int) bool {
+			return slice[i].GetId().GetResource() < slice[j].GetId().GetResource()
+		})
+	}
+
+	// 9. Pre-build entitlements index keyed by resource ID. Entitlements() becomes
+	// an O(1) lookup instead of a full map scan per page.
+	// All entitlements for the same resource are grouped together (e.g. "eng:admin"
+	// and "eng:member" both land under entIndex["eng"]), sorted by slug for stable pagination.
+	c.entIndex = make(map[string][]*v2.Entitlement)
+	for _, ent := range c.entitlements {
+		resID := ent.GetResource().GetId().GetResource()
+		c.entIndex[resID] = append(c.entIndex[resID], ent)
+	}
+	for resID := range c.entIndex {
+		slice := c.entIndex[resID]
+		sort.SliceStable(slice, func(i, j int) bool {
+			return slice[i].GetSlug() < slice[j].GetSlug()
+		})
 	}
 
 	return c, nil

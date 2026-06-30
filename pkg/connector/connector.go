@@ -27,6 +27,33 @@ type FileConnector struct {
 
 func (fc *FileConnector) Close() error { return nil }
 
+// StaticCapabilitiesConnector used exclusively by the capabilities sub-command via WithDefaultCapabilitiesConnectorBuilderV2.
+// It reports all resource types supported by the connector (one per TraitMap entry) without reading any file.
+type StaticCapabilitiesConnector struct{}
+
+func (s *StaticCapabilitiesConnector) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
+	return &v2.ConnectorMetadata{
+		DisplayName: "Baton-File Connector",
+		Description: "Connector that syncs identity and access data from a local file",
+	}, nil
+}
+
+func (s *StaticCapabilitiesConnector) Validate(ctx context.Context) (annotations.Annotations, error) {
+	return nil, nil
+}
+
+func (s *StaticCapabilitiesConnector) Close() error { return nil }
+
+func (s *StaticCapabilitiesConnector) ResourceSyncers(_ context.Context) []connectorbuilder.ResourceSyncerV2 {
+	var syncers []connectorbuilder.ResourceSyncerV2
+	for name := range TraitMap {
+		syncers = append(syncers, &resourceBuilder{
+			resourceType: buildDynamicResourceType(name, name),
+		})
+	}
+	return syncers
+}
+
 type syncCache struct {
 	resourceTypes map[string]*v2.ResourceType
 	resources     map[string]*v2.Resource

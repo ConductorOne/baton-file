@@ -5,6 +5,7 @@ import (
 
 	"github.com/conductorone/baton-file/pkg/connector"
 	sdkConfig "github.com/conductorone/baton-sdk/pkg/config"
+	"github.com/conductorone/baton-sdk/pkg/connectorrunner"
 	"github.com/conductorone/baton-sdk/pkg/field"
 )
 
@@ -25,5 +26,7 @@ var (
 
 func main() {
 	ctx := context.Background()
-	sdkConfig.RunConnector(ctx, "baton-file", version, Configuration, connector.New)
+	sdkConfig.RunConnector(ctx, "baton-file", version, Configuration, connector.New,
+		connectorrunner.WithDefaultCapabilitiesConnectorBuilderV2(&connector.StaticCapabilitiesConnector{}),
+	)
 }

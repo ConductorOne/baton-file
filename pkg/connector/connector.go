@@ -33,7 +33,7 @@ type StaticCapabilitiesConnector struct{}
 
 func (s *StaticCapabilitiesConnector) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
 	return &v2.ConnectorMetadata{
-		DisplayName: "Baton-File Connector",
+		DisplayName: "File Connector",
 		Description: "Connector that syncs identity and access data from a local file",
 	}, nil
 }

@@ -1,7 +1,7 @@
 ---
-title: "Set up File connector"
+title: "Set up a File connector"
 description: "C1 provides identity governance for systems without a native API by syncing identity and access data from a file. Integrate a file-based source with C1 to run user access reviews (UARs)."
-og:title: "Set up File connector"
+og:title: "Set up a File connector"
 og:description: "C1 provides identity governance for systems without a native API by syncing identity and access data from a file. Integrate a file-based source with C1 to run user access reviews (UARs)."
 sidebarTitle: "File"
 ---
@@ -29,11 +29,17 @@ Resource types are defined by the input file (via each row's `trait`), so the ex
 - **Grant inheritance.** In addition to direct user grants, the connector supports resource-to-resource inheritance mappings with configurable depth (`full` or `shallow`), modeled as grant expansion in C1.
 - **Rich user attributes.** MFA/SSO status, employee IDs, login aliases, additional emails, and status details are synced when present in the file.
 
-## Limitations
+**Notes:**
 
 - **Read-only.** The connector cannot create, modify, revoke, or deprovision access in the source system — it only reads what the file describes.
 - **Full sync only.** Every sync reads the entire file; there is no incremental/targeted sync.
 - **File-defined data.** C1 only knows what the file contains. Resource IDs must be globally unique across users and resources.
+
+## Gather File connector credentials
+
+<Warning>
+The File connector does not call a vendor API, so there are no third-party credentials to gather. You only need the C1 **Client ID** and **Client Secret** generated in the Configure section below, plus an input file (YAML, JSON/JSONC, CSV, or XLSX) built from the baton-file template.
+</Warning>
 
 ## Configure the File connector
 
@@ -43,6 +49,14 @@ Resource types are defined by the input file (via each row's `trait`), so the ex
 - The **Connector Administrator** or **Super Administrator** role in C1
 - An input file (YAML, JSON/JSONC, CSV, or XLSX) built from the baton-file template
 </Warning>
+
+<Tabs>
+<Tab title="Cloud-hosted">
+
+*Cloud-hosted connector not currently available.* The File connector reads a file from your own environment, so it must be self-hosted.
+
+</Tab>
+<Tab title="Self-hosted">
 
 The File connector is **self-hosted** — it runs in your own environment and reads a file you provide. It is registered through the generic **Baton** self-hosted connector tile.
 
@@ -96,3 +110,6 @@ baton-file --input /path/to/your-data.yaml   # writes sync.c1z
 See the connector's README or run `baton-file --help` for all available flags and environment variables.
 
 **Done.** Your File connector is now pulling access data into C1.
+
+</Tab>
+</Tabs>

@@ -59,13 +59,14 @@ Required fields are annotated with `# REQUIRED` (YAML) or `// REQUIRED` (JSONC) 
 
 All formats share the same data model with five sections:
 
-| Section                      | Description                                      |
-| ---------------------------- | ------------------------------------------------ |
-| `users`                      | User identity definitions                        |
-| `resources`                  | Non-user resources (teams, roles, apps, secrets) |
-| `entitlements`               | Permission/access definitions on resources       |
-| `direct_user_grants`         | User-to-entitlement grant assignments            |
-| `grant_inheritance_mappings` | Resource-to-resource entitlement inheritance     |
+| Section                      | Description                                        |
+| ---------------------------- | -------------------------------------------------- |
+| `users`                      | User identity definitions                          |
+| `resources`                  | Non-user resources (teams, roles, apps, secrets)   |
+| `entitlements`               | Permission/access definitions on resources         |
+| `direct_user_grants`         | User-to-entitlement grant assignments              |
+| `grant_inheritance_mappings` | Resource-to-resource entitlement inheritance       |
+| `external_grants`            | Grants to principals from a shared identity source |
 
 See format-specific documentation:
 
@@ -109,6 +110,47 @@ grant_inheritance_mappings:
     inherited_entitlement_slug: read
     inheritance_depth: full # or "shallow"
 ```
+
+### External Grants (Shared Identity Source)
+
+Assign a local entitlement to a principal owned by **another connector** (the
+"shared identity source", e.g. Okta or Active Directory). The principal is not
+defined in this file — a match rule tells ConductorOne how to find it in the
+identity source's synced data:
+
+```yaml
+external_grants:
+  # Match one external user by attribute (email is the standard key for users)
+  - resource_id: api-service
+    entitlement_slug: write
+    match_type: attribute # all, id, or attribute
+    match_resource_type: user # user or group
+    match_key: email
+    match_value: jane.smith@external.com
+
+  # Match one external principal by its native ID in the identity source.
+  # For group matches, expand_entitlement_slug optionally enables grant
+  # expansion: members of the matched group inherit this grant through the
+  # group's named entitlement. expand_depth is "full" (default) or "shallow".
+  - resource_id: api-service
+    entitlement_slug: read
+    match_type: id
+    match_resource_type: group
+    match_id: external-group-123
+    expand_entitlement_slug: member
+
+  # Match ALL external principals of a type
+  - resource_id: api-service
+    entitlement_slug: read
+    match_type: all
+    match_resource_type: user
+```
+
+To use external grants, configure a shared identity source for this connector
+in ConductorOne. When running locally, pass the identity source's synced c1z
+via `--external-resource-c1z` (and optionally
+`--external-resource-entitlement-id-filter` to limit which external principals
+are considered).
 
 ## Date Handling
 

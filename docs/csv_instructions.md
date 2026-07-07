@@ -14,7 +14,7 @@ CSV files use a single flat file with a `record_type` column to distinguish betw
 
 | Column | Description |
 |--------|-------------|
-| `record_type` | **Required.** One of: `user`, `resource`, `entitlement`, `direct_user_grant`, `grant_inheritance_mapping` |
+| `record_type` | **Required.** One of: `user`, `resource`, `entitlement`, `direct_user_grant`, `grant_inheritance_mapping`, `external_grant` |
 
 ## Columns by Record Type
 
@@ -79,6 +79,27 @@ CSV files use a single flat file with a `record_type` column to distinguish betw
 | `inherited_resource_id` | yes | Resource whose entitlement is inherited |
 | `inherited_entitlement_slug` | yes | Entitlement slug inherited |
 | `inheritance_depth` | yes | `full` or `shallow` |
+
+### `external_grant`
+
+Grants a local entitlement to a principal owned by **another connector** (the
+"shared identity source", e.g. Okta or Active Directory). The principal is not
+defined in this file — a match rule tells ConductorOne how to find it in the
+identity source's synced data. Requires configuring a shared identity source
+for this connector in ConductorOne (or `--external-resource-c1z` when running
+locally).
+
+| Column | Required | Description |
+|--------|----------|-------------|
+| `resource_id` | yes | Local resource ID owning the entitlement |
+| `entitlement_slug` | yes | Local entitlement slug being granted |
+| `match_type` | yes | `all` (every external principal of the type), `id` (match by native ID), or `attribute` (match by key/value) |
+| `match_resource_type` | yes | External principal type: `user` or `group` |
+| `match_id` | when `match_type` is `id` | The external principal's native ID in the identity source |
+| `match_key` | when `match_type` is `attribute` | Attribute to match on (`email` is the standard key for users) |
+| `match_value` | when `match_type` is `attribute` | Attribute value to match |
+| `expand_entitlement_slug` | no | Grant expansion: members of the matched external group inherit this grant through the group's named entitlement (e.g. `member`). Only valid for `group` matches with `match_type` `id` or `attribute` |
+| `expand_depth` | no | `full` (transitive, default) or `shallow` (one level). Only meaningful with `expand_entitlement_slug` |
 
 ## Profile Columns
 

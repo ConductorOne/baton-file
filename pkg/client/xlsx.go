@@ -237,6 +237,24 @@ func loadExcelData(filePath string) (*LoadedData, error) {
 		}
 	}
 
+	// --- External Grants sheet ---
+	if rows, ok := findSheetRows(f, "External Grants", "external_grants"); ok {
+		headerMap := buildHeaderMap(rows[0])
+		for _, row := range rows[1:] {
+			loadedData.ExternalGrants = append(loadedData.ExternalGrants, ExternalGrant{
+				ResourceID:            safeGet(row, headerMap, "Resource ID"),
+				EntitlementSlug:       safeGet(row, headerMap, "Entitlement Slug"),
+				MatchType:             safeGet(row, headerMap, "Match Type"),
+				MatchResourceType:     safeGet(row, headerMap, "Match Resource Type"),
+				MatchID:               safeGet(row, headerMap, "Match ID"),
+				MatchKey:              safeGet(row, headerMap, "Match Key"),
+				MatchValue:            safeGet(row, headerMap, "Match Value"),
+				ExpandEntitlementSlug: safeGet(row, headerMap, "Expand Entitlement Slug"),
+				ExpandDepth:           safeGet(row, headerMap, "Expand Depth"),
+			})
+		}
+	}
+
 	// --- Grant Inheritance Mappings sheet ---
 	if rows, ok := findSheetRows(f, "Grant Inheritance Mappings", "grant_inheritance_mappings"); ok {
 		headerMap := buildHeaderMap(rows[0])

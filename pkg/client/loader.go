@@ -25,7 +25,15 @@ func LoadFileData(filePath string) (*LoadedData, error) {
 	}
 }
 
-const userTypeName = "user"
+const (
+	userTypeName  = "user"
+	groupTypeName = "group"
+
+	// Depth values shared by grant_inheritance_mappings (inheritance_depth)
+	// and external_grants (expand_depth).
+	depthFull    = "full"
+	depthShallow = "shallow"
+)
 
 var deprecatedFieldMappings = map[string]map[string]string{
 	"users": {
@@ -78,7 +86,7 @@ func ValidateUniqueIDs(data *LoadedData) error {
 }
 
 var validTraits = map[string]bool{
-	"user": true, "group": true, "role": true, "app": true, "secret": true,
+	userTypeName: true, groupTypeName: true, "role": true, "app": true, "secret": true,
 }
 
 // ValidateTraits checks that every resource has a recognized trait value.
@@ -274,7 +282,7 @@ func ValidateReferences(data *LoadedData) error {
 				i+1, inheritedEntKey,
 			)
 		}
-		if m.InheritanceDepth != "full" && m.InheritanceDepth != "shallow" {
+		if m.InheritanceDepth != depthFull && m.InheritanceDepth != depthShallow {
 			return fmt.Errorf(
 				"baton-file: grant_inheritance_mapping #%d has invalid inheritance_depth %q. "+
 					"Must be \"full\" or \"shallow\"",
@@ -308,7 +316,7 @@ func ValidateReferences(data *LoadedData) error {
 			)
 		}
 		matchResourceType := strings.ToLower(eg.MatchResourceType)
-		if matchResourceType != userTypeName && matchResourceType != "group" {
+		if matchResourceType != userTypeName && matchResourceType != groupTypeName {
 			return fmt.Errorf(
 				"baton-file: external_grant #%d has invalid match_resource_type %q. "+
 					"Must be \"user\" or \"group\"",
@@ -344,7 +352,7 @@ func ValidateReferences(data *LoadedData) error {
 			// Expansion re-anchors the group's entitlement to the matched
 			// principal, which the SDK only does for group principals matched
 			// by "id" or "attribute" — never for "all".
-			if matchResourceType != "group" {
+			if matchResourceType != groupTypeName {
 				return fmt.Errorf(
 					"baton-file: external_grant #%d sets expand_entitlement_slug, "+
 						"but match_resource_type is %q. "+
@@ -368,7 +376,7 @@ func ValidateReferences(data *LoadedData) error {
 					i+1,
 				)
 			}
-			if eg.ExpandDepth != "full" && eg.ExpandDepth != "shallow" {
+			if eg.ExpandDepth != depthFull && eg.ExpandDepth != depthShallow {
 				return fmt.Errorf(
 					"baton-file: external_grant #%d has invalid expand_depth %q. "+
 						"Must be \"full\" or \"shallow\"",

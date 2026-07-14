@@ -19,9 +19,17 @@ var (
 		field.WithShortHand("i"),
 	)
 
-	Configuration = field.NewConfiguration([]field.SchemaField{
-		inputFileField,
-	})
+	// SupportsExternalResources enables the "shared identity source" feature:
+	// C1 surfaces the identity-source picker for this connector, and the SDK
+	// registers the --external-resource-c1z / --external-resource-entitlement-id-filter
+	// flags used to resolve external_grants match rules against another
+	// connector's synced principals.
+	Configuration = field.NewConfiguration(
+		[]field.SchemaField{
+			inputFileField,
+		},
+		field.WithSupportsExternalResources(true),
+	)
 )
 
 func main() {

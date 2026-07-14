@@ -22,6 +22,7 @@ Sheet names use Title Case with spaces. Lowercase names are also accepted for ba
 | `Entitlements` | Entitlement definitions |
 | `Direct User Grants` | Direct user-to-entitlement grants |
 | `Grant Inheritance Mappings` | Grant inheritance between resources |
+| `External Grants` | Grants to shared identity source principals |
 
 ## Users Sheet
 
@@ -88,6 +89,27 @@ Profile columns use the format `Profile: key_name` as the header. The key is low
 | `Inherited Resource ID` | yes | Resource whose entitlement is inherited |
 | `Inherited Entitlement Slug` | yes | Entitlement slug inherited |
 | `Inheritance Depth` | yes | `full` or `shallow` |
+
+## External Grants Sheet
+
+Grants a local entitlement to a principal owned by **another connector** (the
+"shared identity source", e.g. Okta or Active Directory). The principal is not
+defined in this file — a match rule tells ConductorOne how to find it in the
+identity source's synced data. Requires configuring a shared identity source
+for this connector in ConductorOne (or `--external-resource-c1z` when running
+locally).
+
+| Column | Required | Description |
+|--------|----------|-------------|
+| `Resource ID` | yes | Local resource ID owning the entitlement |
+| `Entitlement Slug` | yes | Local entitlement slug being granted |
+| `Match Type` | yes | `all` (every external principal of the type), `id` (match by native ID), or `attribute` (match by key/value) |
+| `Match Resource Type` | yes | External principal type: `user` or `group` |
+| `Match ID` | when Match Type is `id` | The external principal's native ID in the identity source |
+| `Match Key` | when Match Type is `attribute` | Attribute to match on (`email` is the standard key for users) |
+| `Match Value` | when Match Type is `attribute` | Attribute value to match |
+| `Expand Entitlement Slug` | no | Grant expansion: members of the matched external group inherit this grant through the group's named entitlement (e.g. `member`). Only valid for `group` matches with Match Type `id` or `attribute` |
+| `Expand Depth` | no | `full` (transitive, default) or `shallow` (one level). Only meaningful with Expand Entitlement Slug |
 
 ## Date Formats
 

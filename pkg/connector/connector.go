@@ -10,6 +10,7 @@ import (
 	"github.com/conductorone/baton-file/pkg/client"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
+	"github.com/conductorone/baton-sdk/pkg/bid"
 	"github.com/conductorone/baton-sdk/pkg/cli"
 	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
 	"github.com/conductorone/baton-sdk/pkg/types/entitlement"
@@ -18,6 +19,7 @@ import (
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/proto"
 )
 
 type FileConnector struct {
@@ -66,6 +68,13 @@ type syncCache struct {
 	entIndex    map[string][]*v2.Entitlement // key: resourceID
 	grantsIndex map[string][]*v2.Grant       // key: resourceID
 }
+
+// Depth values shared by grant_inheritance_mappings (inheritance_depth) and
+// external_grants (expand_depth).
+const (
+	depthFull    = "full"
+	depthShallow = "shallow"
+)
 
 // listKey returns the lookup key for the listIndex.
 // top-level resources (no parent) use just the typeID.
@@ -381,7 +390,7 @@ func newSyncCache(ctx context.Context, data *client.LoadedData) (*syncCache, err
 				zap.String("resource_id", m.InheritedResourceID), zap.Int("index", i))
 			continue
 		}
-		if m.InheritanceDepth != "full" && m.InheritanceDepth != "shallow" {
+		if m.InheritanceDepth != depthFull && m.InheritanceDepth != depthShallow {
 			l.Debug("baton-file: invalid inheritance_depth, must be \"full\" or \"shallow\"",
 				zap.String("value", m.InheritanceDepth), zap.Int("index", i))
 			continue
@@ -407,11 +416,119 @@ func newSyncCache(ctx context.Context, data *client.LoadedData) (*syncCache, err
 		}
 		expandable := v2.GrantExpandable_builder{
 			EntitlementIds: []string{membershipEntitlement.GetId()},
-			Shallow:        m.InheritanceDepth == "shallow",
+			Shallow:        m.InheritanceDepth == depthShallow,
 		}.Build()
 		c.grantsIndex[m.InheritedResourceID] = append(c.grantsIndex[m.InheritedResourceID],
 			sdkGrant.NewGrant(res, m.InheritedEntitlementSlug, principalResource.GetId(),
 				sdkGrant.WithAnnotation(expandable)))
+	}
+
+	// External grants: the principal lives in another connector (the shared
+	// identity source), not in this file. Each grant is emitted with a
+	// synthetic placeholder principal plus an ExternalResourceMatch* annotation
+	// describing how to find the real principal. During sync the SDK matches
+	// the annotation against the identity source's principals, creates one
+	// real grant per match, and deletes the placeholder — so the placeholder
+	// principal ID only needs to be deterministic and unique per grant.
+	for i, eg := range data.ExternalGrants {
+		res, ok := c.resources[eg.ResourceID]
+		if !ok {
+			l.Debug("baton-file: skipping external grant, resource not found",
+				zap.String("resource_id", eg.ResourceID), zap.Int("index", i))
+			continue
+		}
+		entKey := fmt.Sprintf("%s:%s", eg.ResourceID, eg.EntitlementSlug)
+		if _, ok := c.entitlements[entKey]; !ok {
+			l.Debug("baton-file: skipping external grant, entitlement not found",
+				zap.String("entitlement_key", entKey), zap.Int("index", i))
+			continue
+		}
+		matchResourceType := strings.ToLower(eg.MatchResourceType)
+		if matchResourceType != "user" && matchResourceType != "group" {
+			l.Debug("baton-file: skipping external grant, match_resource_type must be \"user\" or \"group\"",
+				zap.String("match_resource_type", eg.MatchResourceType), zap.Int("index", i))
+			continue
+		}
+		trait := TraitMap[matchResourceType]
+
+		var matchAnno proto.Message
+		var placeholderID string
+		switch strings.ToLower(eg.MatchType) {
+		case "all":
+			matchAnno = v2.ExternalResourceMatchAll_builder{ResourceType: trait}.Build()
+			placeholderID = "external-all-" + matchResourceType
+		case "id":
+			if eg.MatchID == "" {
+				l.Debug("baton-file: skipping external grant, match_type \"id\" requires match_id",
+					zap.Int("index", i))
+				continue
+			}
+			matchAnno = v2.ExternalResourceMatchID_builder{Id: eg.MatchID}.Build()
+			placeholderID = eg.MatchID
+		case "attribute":
+			if eg.MatchKey == "" || eg.MatchValue == "" {
+				l.Debug("baton-file: skipping external grant, match_type \"attribute\" requires match_key and match_value",
+					zap.Int("index", i))
+				continue
+			}
+			matchAnno = v2.ExternalResourceMatch_builder{
+				ResourceType: trait,
+				Key:          eg.MatchKey,
+				Value:        eg.MatchValue,
+			}.Build()
+			placeholderID = fmt.Sprintf("external-%s-%s", eg.MatchKey, eg.MatchValue)
+		default:
+			l.Debug("baton-file: skipping external grant, invalid match_type, must be \"all\", \"id\", or \"attribute\"",
+				zap.String("match_type", eg.MatchType), zap.Int("index", i))
+			continue
+		}
+
+		placeholderPrincipal := v2.ResourceId_builder{
+			ResourceType: matchResourceType,
+			Resource:     placeholderID,
+		}.Build()
+
+		grantAnnos := []proto.Message{matchAnno}
+
+		// Optional grant expansion: members of the matched external group
+		// inherit this grant through the group's named entitlement. The
+		// GrantExpandable must reference the entitlement in bid format,
+		// anchored to the placeholder principal — during matching the SDK
+		// re-anchors the slug onto the matched group and verifies that
+		// entitlement exists in the store. Only supported for group
+		// principals matched by "id" or "attribute" (the SDK does not
+		// rewrite expandables for "all" matches).
+		if eg.ExpandEntitlementSlug != "" {
+			if matchResourceType != "group" || strings.ToLower(eg.MatchType) == "all" {
+				l.Debug("baton-file: skipping external grant, expansion requires match_resource_type \"group\" and match_type \"id\" or \"attribute\"",
+					zap.String("match_type", eg.MatchType),
+					zap.String("match_resource_type", eg.MatchResourceType),
+					zap.Int("index", i))
+				continue
+			}
+			if eg.ExpandDepth != "" && eg.ExpandDepth != depthFull && eg.ExpandDepth != depthShallow {
+				l.Debug("baton-file: skipping external grant, invalid expand_depth, must be \"full\" or \"shallow\"",
+					zap.String("expand_depth", eg.ExpandDepth), zap.Int("index", i))
+				continue
+			}
+			entBid, err := bid.MakeBid(v2.Entitlement_builder{
+				Resource: v2.Resource_builder{Id: placeholderPrincipal}.Build(),
+				Slug:     eg.ExpandEntitlementSlug,
+			}.Build())
+			if err != nil {
+				l.Warn("baton-file: skipping external grant, failed to build expandable entitlement bid",
+					zap.Int("index", i), zap.Error(err))
+				continue
+			}
+			grantAnnos = append(grantAnnos, v2.GrantExpandable_builder{
+				EntitlementIds: []string{entBid},
+				Shallow:        eg.ExpandDepth == depthShallow,
+			}.Build())
+		}
+
+		c.grantsIndex[eg.ResourceID] = append(c.grantsIndex[eg.ResourceID],
+			sdkGrant.NewGrant(res, eg.EntitlementSlug, placeholderPrincipal,
+				sdkGrant.WithAnnotation(grantAnnos...)))
 	}
 
 	// Sort grants once for stable pagination.

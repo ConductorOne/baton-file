@@ -25,7 +25,15 @@ func LoadFileData(filePath string) (*LoadedData, error) {
 	}
 }
 
-const userTypeName = "user"
+const (
+	userTypeName  = "user"
+	groupTypeName = "group"
+
+	// Depth values shared by grant_inheritance_mappings (inheritance_depth)
+	// and external_grants (expand_depth).
+	depthFull    = "full"
+	depthShallow = "shallow"
+)
 
 var deprecatedFieldMappings = map[string]map[string]string{
 	"users": {
@@ -78,7 +86,7 @@ func ValidateUniqueIDs(data *LoadedData) error {
 }
 
 var validTraits = map[string]bool{
-	"user": true, "group": true, "role": true, "app": true, "secret": true,
+	userTypeName: true, groupTypeName: true, "role": true, "app": true, "secret": true,
 }
 
 // ValidateTraits checks that every resource has a recognized trait value.
@@ -274,12 +282,107 @@ func ValidateReferences(data *LoadedData) error {
 				i+1, inheritedEntKey,
 			)
 		}
-		if m.InheritanceDepth != "full" && m.InheritanceDepth != "shallow" {
+		if m.InheritanceDepth != depthFull && m.InheritanceDepth != depthShallow {
 			return fmt.Errorf(
 				"baton-file: grant_inheritance_mapping #%d has invalid inheritance_depth %q. "+
 					"Must be \"full\" or \"shallow\"",
 				i+1, m.InheritanceDepth,
 			)
+		}
+	}
+
+	for i, eg := range data.ExternalGrants {
+		if eg.ResourceID == "" {
+			return fmt.Errorf(
+				"baton-file: external_grant #%d is missing required field \"resource_id\"",
+				i+1,
+			)
+		}
+		if !allIDs[eg.ResourceID] {
+			return fmt.Errorf(
+				"baton-file: external_grant #%d references resource_id %q, "+
+					"but no user or resource with that ID exists. "+
+					"Check for typos or add the missing resource",
+				i+1, eg.ResourceID,
+			)
+		}
+		entKey := eg.ResourceID + ":" + eg.EntitlementSlug
+		if eg.EntitlementSlug == "" || !entitlementKeys[entKey] {
+			return fmt.Errorf(
+				"baton-file: external_grant #%d references entitlement %q, "+
+					"but no entitlement with that resource_id and slug exists. "+
+					"Check for typos or add the missing entitlement definition",
+				i+1, entKey,
+			)
+		}
+		matchResourceType := strings.ToLower(eg.MatchResourceType)
+		if matchResourceType != userTypeName && matchResourceType != groupTypeName {
+			return fmt.Errorf(
+				"baton-file: external_grant #%d has invalid match_resource_type %q. "+
+					"Must be \"user\" or \"group\"",
+				i+1, eg.MatchResourceType,
+			)
+		}
+		switch strings.ToLower(eg.MatchType) {
+		case "all":
+			// No extra fields required.
+		case "id":
+			if eg.MatchID == "" {
+				return fmt.Errorf(
+					"baton-file: external_grant #%d has match_type \"id\" but is missing required field \"match_id\"",
+					i+1,
+				)
+			}
+		case "attribute":
+			if eg.MatchKey == "" || eg.MatchValue == "" {
+				return fmt.Errorf(
+					"baton-file: external_grant #%d has match_type \"attribute\" but is missing "+
+						"required field(s) \"match_key\" and/or \"match_value\"",
+					i+1,
+				)
+			}
+		default:
+			return fmt.Errorf(
+				"baton-file: external_grant #%d has invalid match_type %q. "+
+					"Must be \"all\", \"id\", or \"attribute\"",
+				i+1, eg.MatchType,
+			)
+		}
+		if eg.ExpandEntitlementSlug != "" {
+			// Expansion re-anchors the group's entitlement to the matched
+			// principal, which the SDK only does for group principals matched
+			// by "id" or "attribute" — never for "all".
+			if matchResourceType != groupTypeName {
+				return fmt.Errorf(
+					"baton-file: external_grant #%d sets expand_entitlement_slug, "+
+						"but match_resource_type is %q. "+
+						"Grant expansion is only supported for match_resource_type \"group\"",
+					i+1, eg.MatchResourceType,
+				)
+			}
+			if strings.ToLower(eg.MatchType) == "all" {
+				return fmt.Errorf(
+					"baton-file: external_grant #%d sets expand_entitlement_slug with match_type \"all\". "+
+						"Grant expansion is only supported with match_type \"id\" or \"attribute\"",
+					i+1,
+				)
+			}
+		}
+		if eg.ExpandDepth != "" {
+			if eg.ExpandEntitlementSlug == "" {
+				return fmt.Errorf(
+					"baton-file: external_grant #%d sets expand_depth without expand_entitlement_slug. "+
+						"expand_depth is only meaningful when expansion is enabled",
+					i+1,
+				)
+			}
+			if eg.ExpandDepth != depthFull && eg.ExpandDepth != depthShallow {
+				return fmt.Errorf(
+					"baton-file: external_grant #%d has invalid expand_depth %q. "+
+						"Must be \"full\" or \"shallow\"",
+					i+1, eg.ExpandDepth,
+				)
+			}
 		}
 	}
 
@@ -333,4 +436,3 @@ func ValidateLoadedData(rawBytes []byte, format string) error {
 
 	return nil
 }
-

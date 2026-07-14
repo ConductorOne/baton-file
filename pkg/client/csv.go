@@ -127,6 +127,18 @@ func loadCSVData(filePath string) (*LoadedData, error) {
 				ResourceID:      csvGet(row, "resource_id"),
 				EntitlementSlug: csvGet(row, "entitlement_slug"),
 			})
+		case "external_grant":
+			data.ExternalGrants = append(data.ExternalGrants, ExternalGrant{
+				ResourceID:            csvGet(row, "resource_id"),
+				EntitlementSlug:       csvGet(row, "entitlement_slug"),
+				MatchType:             csvGet(row, "match_type"),
+				MatchResourceType:     csvGet(row, "match_resource_type"),
+				MatchID:               csvGet(row, "match_id"),
+				MatchKey:              csvGet(row, "match_key"),
+				MatchValue:            csvGet(row, "match_value"),
+				ExpandEntitlementSlug: csvGet(row, "expand_entitlement_slug"),
+				ExpandDepth:           csvGet(row, "expand_depth"),
+			})
 		case "grant_inheritance_mapping":
 			data.GrantInheritanceMappings = append(data.GrantInheritanceMappings, GrantInheritanceMapping{
 				PrincipalResourceID:      csvGet(row, "principal_resource_id"),
@@ -147,7 +159,7 @@ func loadCSVData(filePath string) (*LoadedData, error) {
 		}
 		return nil, fmt.Errorf(
 			"baton-file: csv contains unrecognized record_type values: %v. "+
-				"Valid types are: user, resource, entitlement, direct_user_grant, grant_inheritance_mapping",
+				"Valid types are: user, resource, entitlement, direct_user_grant, grant_inheritance_mapping, external_grant",
 			names,
 		)
 	}

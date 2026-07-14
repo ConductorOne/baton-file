@@ -18,6 +18,7 @@ resources: []
 entitlements: []
 direct_user_grants: []
 grant_inheritance_mappings: []
+external_grants: []
 ```
 
 ## Users
@@ -93,6 +94,27 @@ Secret-specific fields (`created_at`, `expires_at`, `created_by`, `identity`) ar
 | `inherited_resource_id` | string | yes | Resource whose entitlement is inherited |
 | `inherited_entitlement_slug` | string | yes | Entitlement slug that is inherited |
 | `inheritance_depth` | string | yes | Must be `"full"` or `"shallow"` |
+
+## External Grants
+
+Grants a local entitlement to a principal owned by **another connector** (the
+"shared identity source", e.g. Okta or Active Directory). The principal is not
+defined in this file — a match rule tells ConductorOne how to find it in the
+identity source's synced data. Requires configuring a shared identity source
+for this connector in ConductorOne (or `--external-resource-c1z` when running
+locally).
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `resource_id` | string | yes | Local resource ID owning the entitlement |
+| `entitlement_slug` | string | yes | Local entitlement slug being granted |
+| `match_type` | string | yes | `all` (every external principal of the type), `id` (match by native ID), or `attribute` (match by key/value) |
+| `match_resource_type` | string | yes | External principal type: `user` or `group` |
+| `match_id` | string | when `match_type: id` | The external principal's native ID in the identity source |
+| `match_key` | string | when `match_type: attribute` | Attribute to match on (`email` is the standard key for users) |
+| `match_value` | string | when `match_type: attribute` | Attribute value to match |
+| `expand_entitlement_slug` | string | no | Grant expansion: members of the matched external group inherit this grant through the group's named entitlement (e.g. `member`). Only valid for `group` matches with `match_type` `id` or `attribute` |
+| `expand_depth` | string | no | `full` (transitive, default) or `shallow` (one level). Only meaningful with `expand_entitlement_slug` |
 
 ## Date Formats
 

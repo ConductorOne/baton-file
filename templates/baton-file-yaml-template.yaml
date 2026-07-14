@@ -135,3 +135,36 @@ grant_inheritance_mappings:
     inherited_resource_id: platform-admin
     inherited_entitlement_slug: assigned
     inheritance_depth: shallow
+
+# External grants assign local entitlements to principals owned by ANOTHER
+# connector (the "shared identity source", e.g. Okta or Active Directory).
+# The principal is not defined in this file — a match rule tells C1 how to
+# find it in the identity source's data. Requires configuring a shared
+# identity source for this connector in C1.
+external_grants:
+  # Required: resource_id, entitlement_slug, match_type, match_resource_type
+  # match_type "attribute": also requires match_key and match_value
+  - resource_id: api-service               # REQUIRED (local resource)
+    entitlement_slug: write                # REQUIRED (local entitlement)
+    match_type: attribute                  # REQUIRED (all, id, or attribute)
+    match_resource_type: user              # REQUIRED (user or group)
+    match_key: email                       # REQUIRED for match_type: attribute
+    match_value: jane.smith@external.com   # REQUIRED for match_type: attribute
+
+  # match_type "id": also requires match_id (the identity source's native ID).
+  # expand_entitlement_slug (optional, group matches only): members of the
+  # matched external group inherit this grant through the group's named
+  # entitlement. expand_depth is "full" (default) or "shallow".
+  - resource_id: api-service
+    entitlement_slug: read
+    match_type: id
+    match_resource_type: group
+    match_id: external-group-123
+    expand_entitlement_slug: member
+    expand_depth: full
+
+  # match_type "all": grants to EVERY external principal of that type
+  - resource_id: api-service
+    entitlement_slug: read
+    match_type: all
+    match_resource_type: user

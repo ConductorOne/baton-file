@@ -40,7 +40,8 @@ type FileConnector struct {
 // only per-sync hook this connector gets is Validate(), so Validate() is
 // where the input file is re-read and the fresh syncCache is published here.
 // Data-section changes to the file MUST be picked up on the next sync without
-// a restart; only schema changes (a new resource type) require one. Do NOT
+// a restart; only schema changes (a new resource type, or a trait change to
+// an existing type) require one. Do NOT
 // move the file load back to construction time, capture a *syncCache snapshot
 // in a builder, or assume the SDK refreshes anything between syncs (it does
 // not — that assumption caused the original hot-load regression in PR #40).
@@ -244,6 +245,14 @@ func (fc *FileConnector) ResourceSyncers(ctx context.Context) []connectorbuilder
 
 	var syncers []connectorbuilder.ResourceSyncerV2
 	for _, rt := range cache.resourceTypes {
+		// resourceType is INTENTIONALLY frozen at registration time and never
+		// refreshed from later cache generations. Hot-load covers the file's
+		// data sections only; schema — the set of resource types and their
+		// traits — is fixed for the process lifetime because the SDK registers
+		// syncers by type exactly once. Editing an existing type's trait in
+		// the file therefore requires a restart, same as adding a new type;
+		// resolving rt from the live cache here would not change that, since
+		// the SDK-side registration would still hold the startup-time type.
 		syncers = append(syncers, &resourceBuilder{cache: &fc.cache, resourceType: rt})
 	}
 

@@ -24,21 +24,53 @@ func clampPageSize(requested int) int {
 	return requested
 }
 
-func paginate[T any](items []T, tokenStr string, tokenSize int) ([]T, string, error) {
+// parseOffset validates a numeric page-token offset.
+func parseOffset(tokenStr, offsetStr string) (int, error) {
+	parsed, err := strconv.Atoi(offsetStr)
+	if err != nil {
+		return 0, fmt.Errorf("baton-file: invalid page token %q: %w", tokenStr, err)
+	}
+	if parsed <= 0 {
+		return 0, fmt.Errorf("baton-file: invalid page token %q: must be a positive integer", tokenStr)
+	}
+	return parsed, nil
+}
+
+func paginate[T any](items []T, gen string, tokenStr string, tokenSize int) ([]T, string, error) {
 	// SDK sends Size=0 during sync_full; clamp converts it to pageSize so we never return an empty page.
 	size := clampPageSize(tokenSize)
 
-	// Empty token means first page; non-empty token is the numeric offset where this page starts.
+	// Empty token means first page. Tokens minted by this version are
+	// "<gen>:<offset>" where gen fingerprints the cache the offset indexes
+	// into; bare numeric tokens are the legacy (pre-generation) format.
 	offset := 0
 	if tokenStr != "" {
-		parsed, err := strconv.Atoi(tokenStr)
-		if err != nil {
-			return nil, "", fmt.Errorf("baton-file: invalid page token %q: %w", tokenStr, err)
+		tokenGen, offsetStr, found := strings.Cut(tokenStr, ":")
+		switch {
+		case !found:
+			// Legacy numeric token: honor it as a plain offset so an
+			// in-flight sync survives a binary upgrade.
+			parsed, err := parseOffset(tokenStr, tokenStr)
+			if err != nil {
+				return nil, "", err
+			}
+			offset = parsed
+		case tokenGen != gen:
+			// The token was minted against a different cache generation: the
+			// file changed and the cache was swapped while this listing was
+			// in flight (mid-sync health-check revalidation, or a sync
+			// resumed after a restart). Offsets are meaningless across
+			// generations — resuming would silently skip or duplicate items.
+			// Restart the listing instead: store writes are idempotent
+			// upserts, so re-emitting earlier pages is safe.
+			offset = 0
+		default:
+			parsed, err := parseOffset(tokenStr, offsetStr)
+			if err != nil {
+				return nil, "", err
+			}
+			offset = parsed
 		}
-		if parsed <= 0 {
-			return nil, "", fmt.Errorf("baton-file: invalid page token %q: must be a positive integer", tokenStr)
-		}
-		offset = parsed
 	}
 
 	// Guard against a stale checkpoint: if the file was replaced with fewer
@@ -54,16 +86,26 @@ func paginate[T any](items []T, tokenStr string, tokenSize int) ([]T, string, er
 		end = len(items)
 	}
 
-	// Empty next token signals the SDK that there are no more pages.
+	// Empty next token signals the SDK that there are no more pages. An empty
+	// gen (caches built directly in tests) mints legacy numeric tokens.
 	var next string
 	if end < len(items) {
-		next = strconv.Itoa(end)
+		if gen == "" {
+			next = strconv.Itoa(end)
+		} else {
+			next = gen + ":" + strconv.Itoa(end)
+		}
 	}
 	return items[offset:end], next, nil
 }
 
 type resourceBuilder struct {
-	cache        *syncCache
+	// cache is the shared live holder, NOT a snapshot. Builders live for the
+	// whole process while Validate() republishes the cache each sync.
+	// IMPORTANT: do not replace this with a *syncCache captured at
+	// construction — that freezes file data until the service restarts
+	// (hot-load regression; see cacheHolder in connector.go).
+	cache        *cacheHolder
 	resourceType *v2.ResourceType
 }
 
@@ -73,8 +115,12 @@ func (b *resourceBuilder) ResourceType(ctx context.Context) *v2.ResourceType {
 
 func (b *resourceBuilder) List(_ context.Context, parentResourceID *v2.ResourceId,
 	opts rs.SyncOpAttrs) ([]*v2.Resource, *rs.SyncOpResults, error) {
-	resources := b.cache.listIndex[listKey(b.resourceType.GetId(), parentResourceID)]
-	page, next, err := paginate(resources, opts.PageToken.Token, opts.PageToken.Size)
+	cache := b.cache.load()
+	if cache == nil {
+		return nil, nil, fmt.Errorf("baton-file: sync cache not initialized")
+	}
+	resources := cache.listIndex[listKey(b.resourceType.GetId(), parentResourceID)]
+	page, next, err := paginate(resources, cache.gen, opts.PageToken.Token, opts.PageToken.Size)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -83,8 +129,12 @@ func (b *resourceBuilder) List(_ context.Context, parentResourceID *v2.ResourceI
 
 func (b *resourceBuilder) Entitlements(_ context.Context, resource *v2.Resource,
 	opts rs.SyncOpAttrs) ([]*v2.Entitlement, *rs.SyncOpResults, error) {
-	ents := b.cache.entIndex[resource.GetId().GetResource()]
-	page, next, err := paginate(ents, opts.PageToken.Token, opts.PageToken.Size)
+	cache := b.cache.load()
+	if cache == nil {
+		return nil, nil, fmt.Errorf("baton-file: sync cache not initialized")
+	}
+	ents := cache.entIndex[resource.GetId().GetResource()]
+	page, next, err := paginate(ents, cache.gen, opts.PageToken.Token, opts.PageToken.Size)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -93,8 +143,12 @@ func (b *resourceBuilder) Entitlements(_ context.Context, resource *v2.Resource,
 
 func (b *resourceBuilder) Grants(_ context.Context, resource *v2.Resource,
 	opts rs.SyncOpAttrs) ([]*v2.Grant, *rs.SyncOpResults, error) {
-	grants := b.cache.grantsIndex[resource.GetId().GetResource()]
-	page, next, err := paginate(grants, opts.PageToken.Token, opts.PageToken.Size)
+	cache := b.cache.load()
+	if cache == nil {
+		return nil, nil, fmt.Errorf("baton-file: sync cache not initialized")
+	}
+	grants := cache.grantsIndex[resource.GetId().GetResource()]
+	page, next, err := paginate(grants, cache.gen, opts.PageToken.Token, opts.PageToken.Size)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -110,7 +164,7 @@ func buildUserResource(ctx context.Context, userData client.UserData,
 		opts = append(opts, rs.WithEmail(userData.Email, true))
 	}
 	if len(userData.Profile) > 0 {
-		opts = append(opts, rs.WithUserProfile(userData.Profile))
+		opts = append(opts, rs.WithUserProfile(userData.Profile)) //nolint:staticcheck // kept: sets trait+resource field; replacement drops the trait field, changing sync output
 	}
 
 	userStatus := v2.UserTrait_Status_STATUS_ENABLED
@@ -175,9 +229,9 @@ func buildUserResource(ctx context.Context, userData client.UserData,
 	}
 
 	if userData.StatusDetails != "" {
-		opts = append(opts, rs.WithDetailedStatus(userStatus, userData.StatusDetails))
+		opts = append(opts, rs.WithDetailedStatus(userStatus, userData.StatusDetails)) //nolint:staticcheck // kept: sets trait+resource field; replacement drops the trait field, changing sync output
 	} else {
-		opts = append(opts, rs.WithStatus(userStatus))
+		opts = append(opts, rs.WithStatus(userStatus)) //nolint:staticcheck // kept: sets trait+resource field; replacement drops the trait field, changing sync output
 	}
 
 	return rs.NewUserResource(userData.DisplayName, resourceType, userData.ID, opts)
@@ -212,7 +266,7 @@ func buildResource(ctx context.Context, data client.ResourceData,
 func buildGroupTraitOptions(data client.ResourceData) []rs.GroupTraitOption {
 	var opts []rs.GroupTraitOption
 	if len(data.Profile) > 0 {
-		opts = append(opts, rs.WithGroupProfile(data.Profile))
+		opts = append(opts, rs.WithGroupProfile(data.Profile)) //nolint:staticcheck // kept: sets trait+resource field; replacement drops the trait field, changing sync output
 	}
 	return opts
 }
@@ -220,7 +274,7 @@ func buildGroupTraitOptions(data client.ResourceData) []rs.GroupTraitOption {
 func buildRoleTraitOptions(data client.ResourceData) []rs.RoleTraitOption {
 	var opts []rs.RoleTraitOption
 	if len(data.Profile) > 0 {
-		opts = append(opts, rs.WithRoleProfile(data.Profile))
+		opts = append(opts, rs.WithRoleProfile(data.Profile)) //nolint:staticcheck // kept: sets trait+resource field; replacement drops the trait field, changing sync output
 	}
 	return opts
 }
@@ -228,7 +282,7 @@ func buildRoleTraitOptions(data client.ResourceData) []rs.RoleTraitOption {
 func buildAppTraitOptions(data client.ResourceData) []rs.AppTraitOption {
 	var opts []rs.AppTraitOption
 	if len(data.Profile) > 0 {
-		opts = append(opts, rs.WithAppProfile(data.Profile))
+		opts = append(opts, rs.WithAppProfile(data.Profile)) //nolint:staticcheck // kept: sets trait+resource field; replacement drops the trait field, changing sync output
 	}
 	return opts
 }
@@ -243,7 +297,7 @@ func buildSecretTraitOptions(ctx context.Context, data client.ResourceData) []rs
 			l.Warn("baton-file: failed to parse created_at for secret, skipping",
 				zap.String("resource_id", data.ID), zap.Error(err))
 		} else {
-			opts = append(opts, rs.WithSecretCreatedAt(*t))
+			opts = append(opts, rs.WithSecretCreatedAt(*t)) //nolint:staticcheck // kept: sets trait+resource field; replacement drops the trait field, changing sync output
 		}
 	}
 

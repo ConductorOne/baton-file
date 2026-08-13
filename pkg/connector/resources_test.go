@@ -12,6 +12,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// testBuilder wraps a pre-built cache in a holder, mirroring what
+// ResourceSyncers does with the live connector cache.
+func testBuilder(cache *syncCache, rt *v2.ResourceType) *resourceBuilder {
+	h := &cacheHolder{}
+	h.store(cache)
+	return &resourceBuilder{cache: h, resourceType: rt}
+}
+
 // allGrants pages through Grants() until exhausted and returns every grant.
 func allGrants(t *testing.T, b *resourceBuilder, res *v2.Resource) []*v2.Grant {
 	t.Helper()
@@ -97,7 +105,7 @@ func TestPaginate_Exhaustion(t *testing.T) {
 	token := ""
 	pages := 0
 	for {
-		page, next, err := paginate(items, token, 0)
+		page, next, err := paginate(items, "", token, 0)
 		require.NoError(t, err)
 		require.LessOrEqual(t, len(page), pageSize)
 		pages++
@@ -117,7 +125,7 @@ func TestPaginate_Exhaustion(t *testing.T) {
 
 func TestPaginate_StaleOffset(t *testing.T) {
 	items := make([]int, 50)
-	page, next, err := paginate(items, "200", 0)
+	page, next, err := paginate(items, "", "200", 0)
 	require.NoError(t, err)
 	require.Empty(t, page)
 	require.Empty(t, next)
@@ -125,10 +133,46 @@ func TestPaginate_StaleOffset(t *testing.T) {
 
 func TestPaginate_InvalidToken(t *testing.T) {
 	items := []int{1, 2, 3}
-	for _, tok := range []string{"not-a-number", "abc", "-1", "0"} {
-		_, _, err := paginate(items, tok, 0)
+	for _, tok := range []string{"not-a-number", "abc", "-1", "0", "gen1:abc", "gen1:-1", "gen1:0"} {
+		_, _, err := paginate(items, "gen1", tok, 0)
 		require.Error(t, err, "token %q should return error", tok)
 	}
+}
+
+func TestPaginate_GenerationStampedTokens(t *testing.T) {
+	items := []int{10, 20, 30}
+
+	// Tokens minted under a gen carry it; same-gen resume honors the offset.
+	page, next, err := paginate(items, "gen1", "", 2)
+	require.NoError(t, err)
+	require.Equal(t, []int{10, 20}, page)
+	require.Equal(t, "gen1:2", next)
+
+	page, next, err = paginate(items, "gen1", next, 2)
+	require.NoError(t, err)
+	require.Equal(t, []int{30}, page)
+	require.Empty(t, next)
+}
+
+func TestPaginate_GenerationMismatchRestartsListing(t *testing.T) {
+	// A token minted against a different cache generation must restart the
+	// listing at the beginning instead of replaying its offset — offsets are
+	// meaningless across generations (hot-load swapped the cache mid-listing).
+	items := []int{10, 20, 30}
+	page, next, err := paginate(items, "gen2", "gen1:2", 2)
+	require.NoError(t, err)
+	require.Equal(t, []int{10, 20}, page)
+	require.Equal(t, "gen2:2", next)
+}
+
+func TestPaginate_LegacyNumericTokenHonored(t *testing.T) {
+	// Bare numeric tokens (minted by a pre-generation binary) resume as plain
+	// offsets so an in-flight sync survives a binary upgrade.
+	items := []int{10, 20, 30}
+	page, next, err := paginate(items, "gen1", "2", 2)
+	require.NoError(t, err)
+	require.Equal(t, []int{30}, page)
+	require.Empty(t, next)
 }
 
 // Grants() behavior tests.
@@ -157,7 +201,7 @@ func TestGrants_InheritanceMapping_ExpandableAnnotation(t *testing.T) {
 	cache, err := newSyncCache(ctx, data)
 	require.NoError(t, err)
 
-	b := &resourceBuilder{cache: cache, resourceType: cache.resourceTypes["role"]}
+	b := testBuilder(cache, cache.resourceTypes["role"])
 	grants := allGrants(t, b, cache.resources["role-x"])
 
 	require.Len(t, grants, 1)
@@ -197,7 +241,7 @@ func TestGrants_PaginatesCorrectly(t *testing.T) {
 	cache, err := newSyncCache(ctx, data)
 	require.NoError(t, err)
 
-	b := &resourceBuilder{cache: cache, resourceType: cache.resourceTypes["group"]}
+	b := testBuilder(cache, cache.resourceTypes["group"])
 	grants := allGrants(t, b, cache.resources["res1"])
 
 	require.Len(t, grants, total)
@@ -221,7 +265,7 @@ func TestGrants_InvalidPageToken(t *testing.T) {
 	cache, err := newSyncCache(ctx, data)
 	require.NoError(t, err)
 
-	b := &resourceBuilder{cache: cache, resourceType: cache.resourceTypes["group"]}
+	b := testBuilder(cache, cache.resourceTypes["group"])
 	res := cache.resources["res1"]
 
 	for _, tok := range []string{"not-a-number", "-1", "0"} {
@@ -251,7 +295,7 @@ func TestEntitlements_PaginatesCorrectly(t *testing.T) {
 	cache, err := newSyncCache(ctx, data)
 	require.NoError(t, err)
 
-	b := &resourceBuilder{cache: cache, resourceType: cache.resourceTypes["role"]}
+	b := testBuilder(cache, cache.resourceTypes["role"])
 	ents := allEntitlements(t, b, cache.resources["res1"])
 
 	require.Len(t, ents, total)
@@ -278,7 +322,7 @@ func TestEntitlements_OnlyForRequestedResource(t *testing.T) {
 	cache, err := newSyncCache(ctx, data)
 	require.NoError(t, err)
 
-	b := &resourceBuilder{cache: cache, resourceType: cache.resourceTypes["group"]}
+	b := testBuilder(cache, cache.resourceTypes["group"])
 	ents := allEntitlements(t, b, cache.resources["eng"])
 
 	require.Len(t, ents, 1, "must only return entitlements for the requested resource")
@@ -303,7 +347,7 @@ func TestList_PaginatesCorrectly(t *testing.T) {
 	cache, err := newSyncCache(ctx, data)
 	require.NoError(t, err)
 
-	b := &resourceBuilder{cache: cache, resourceType: cache.resourceTypes["group"]}
+	b := testBuilder(cache, cache.resourceTypes["group"])
 	got := allResources(t, b, nil)
 
 	require.Len(t, got, total)
@@ -327,7 +371,7 @@ func TestList_ReturnsCorrectResourceType(t *testing.T) {
 	cache, err := newSyncCache(ctx, data)
 	require.NoError(t, err)
 
-	b := &resourceBuilder{cache: cache, resourceType: cache.resourceTypes["group"]}
+	b := testBuilder(cache, cache.resourceTypes["group"])
 	resources := allResources(t, b, nil)
 
 	require.Len(t, resources, 1)
@@ -348,7 +392,7 @@ func TestList_FiltersByParent(t *testing.T) {
 	cache, err := newSyncCache(ctx, data)
 	require.NoError(t, err)
 
-	b := &resourceBuilder{cache: cache, resourceType: cache.resourceTypes["team"]}
+	b := testBuilder(cache, cache.resourceTypes["team"])
 
 	topLevel := allResources(t, b, nil)
 	require.Len(t, topLevel, 1)

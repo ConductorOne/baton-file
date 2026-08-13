@@ -20,6 +20,10 @@ import (
 // served on the next sync without a restart. These tests mirror that
 // lifecycle: one ResourceSyncers() call, then file edits followed by
 // Validate(), asserting through the ORIGINAL builders.
+//
+// Unlike the other connector tests, fixtures here are real files written to
+// disk rather than in-memory LoadedData: hot-load IS the file → Validate →
+// cache path, so bypassing the loaders would test nothing.
 
 const hotReloadCSVBase = `record_type,id,display_name,email,status,type,profile.department,profile.title,resource_type,trait,description,resource_id,entitlement_slug,principal_id
 user,alex.taylor,Alex Taylor,alex.taylor@example.com,enabled,human,Engineering,Software Engineer,,,,,,

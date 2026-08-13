@@ -169,6 +169,8 @@ func (fc *FileConnector) Validate(ctx context.Context) (annotations.Annotations,
 	}
 	fc.cache.store(cache)
 
+	// Debug, not Info: this fires on every sync AND every health-check
+	// probe, so Info would flood default logs on probed deployments.
 	ctxzap.Extract(ctx).Debug("baton-file: refreshed data from input file",
 		zap.Int("resource_types", len(cache.resourceTypes)),
 		zap.Int("resources", len(cache.resources)))
@@ -179,8 +181,12 @@ func (fc *FileConnector) Validate(ctx context.Context) (annotations.Annotations,
 // loadValidatedCache reads the input file, runs all cross-record validations,
 // and builds the derived sync cache from it.
 func loadValidatedCache(ctx context.Context, inputFilePath string) (*syncCache, error) {
-	// Fingerprint the raw bytes before parsing; a file edit racing between
-	// the two reads mislabels one build, which at worst restarts a listing.
+	// Fingerprint the raw bytes to stamp this build's generation into page
+	// tokens (see paginate). Hashing raw content is format-agnostic and
+	// exact, and the extra read is cheap next to parsing — the loaders take
+	// paths, not bytes, so reusing one read would mean restructuring them. A
+	// file edit racing between the two reads mislabels one build, which at
+	// worst restarts a listing.
 	raw, err := os.ReadFile(inputFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("baton-file: failed to read input file: %w", err)
@@ -234,6 +240,9 @@ func (fc *FileConnector) ResourceSyncers(ctx context.Context) []connectorbuilder
 		// fallback covers entry points that skip Validate(). This method's
 		// signature cannot return an error, so log-and-return-nil is
 		// intentional — the connector stays alive for the next sync cycle.
+		// Warn, not Error: Validate() returns the real error to the SDK on
+		// every sync, so this log is a secondary signal, and house rules
+		// classify input/config failures as Warn.
 		var err error
 		cache, err = loadValidatedCache(ctx, fc.inputFilePath)
 		if err != nil {

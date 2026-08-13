@@ -105,6 +105,11 @@ type resourceBuilder struct {
 	// IMPORTANT: do not replace this with a *syncCache captured at
 	// construction — that freezes file data until the service restarts
 	// (hot-load regression; see cacheHolder in connector.go).
+	//
+	// It is nil for builders made by StaticCapabilitiesConnector: the
+	// capabilities sub-command registers resource types without reading any
+	// file. No SDK path lists through those builders, but the sync methods
+	// below still guard the nil and return an error instead of panicking.
 	cache        *cacheHolder
 	resourceType *v2.ResourceType
 }
@@ -155,6 +160,14 @@ func (b *resourceBuilder) Grants(_ context.Context, resource *v2.Resource,
 	return page, &rs.SyncOpResults{NextPageToken: next}, nil
 }
 
+// The deprecated trait options used below (WithUserProfile, WithStatus,
+// WithGroupProfile, WithSecretCreatedAt, ...) are kept INTENTIONALLY. The SDK
+// is migrating profile/status/created_at from the trait protos to
+// resource-level attributes: the deprecated options populate BOTH levels,
+// while the WithResource* replacements populate only the resource level.
+// A lint-driven swap would silently drop the trait-level fields from sync
+// output — breaking anything downstream that still reads traits — so the
+// migration needs its own coordinated change, not a mechanical rename.
 func buildUserResource(ctx context.Context, userData client.UserData,
 	resourceType *v2.ResourceType) (*v2.Resource, error) {
 	l := ctxzap.Extract(ctx)

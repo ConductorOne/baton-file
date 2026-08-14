@@ -41,6 +41,14 @@ type FileConnector struct {
 	// follow file-read order, and also prevents two full cache builds from
 	// running concurrently (which would triple peak memory).
 	refreshMu sync.Mutex
+
+	// registeredTypes records the resource type IDs registered by the
+	// construction-time ResourceSyncers() call. Written once during
+	// construction (before the gRPC server starts serving) and read-only
+	// afterwards, so it needs no lock. Validate() uses it to warn when a
+	// file edit introduces types that have no registered syncer and
+	// therefore will not sync until restart.
+	registeredTypes map[string]struct{}
 }
 
 // refresh re-reads the input file and publishes a fresh cache when its
@@ -101,11 +109,14 @@ func (fc *FileConnector) refresh(ctx context.Context) (*syncCache, bool, error) 
 // files never swap.
 //
 // Known limit: hot-load requires a successful start. ResourceSyncers()
-// performs the first load at construction; if the file is invalid at that
+// performs the first load at construction; if the file is INVALID at that
 // moment, zero resource types are registered for the process lifetime and
 // every sync fails until the file is fixed AND the process restarts (see
 // ResourceSyncers). TestHotReload_InvalidFileAtStartupRequiresRestart pins
-// this behavior.
+// this behavior. A file that is valid but has no data rows is NOT this trap:
+// it is a legitimate empty source of truth — ResourceSyncers registers the
+// standard trait types so syncs succeed (empty) and later data rows
+// hot-load; TestHotReload_EmptyFileAtStartupSyncsAndHotLoads pins that.
 type cacheHolder struct {
 	p atomic.Pointer[syncCache]
 }
@@ -222,6 +233,26 @@ func (fc *FileConnector) Validate(ctx context.Context) (annotations.Annotations,
 		ctxzap.Extract(ctx).Debug("baton-file: refreshed data from input file",
 			zap.Int("resource_types", len(cache.resourceTypes)),
 			zap.Int("resources", len(cache.resources)))
+
+		// Schema drift is otherwise silent: rows whose resource type was not
+		// registered at startup simply never sync. Warn so the operator
+		// knows a restart is needed for them. registeredTypes is nil only
+		// when ResourceSyncers() has not run (unit tests calling Validate
+		// directly); skip the check there.
+		if fc.registeredTypes != nil {
+			var missing []string
+			for typeID := range cache.resourceTypes {
+				if _, ok := fc.registeredTypes[typeID]; !ok {
+					missing = append(missing, typeID)
+				}
+			}
+			if len(missing) > 0 {
+				sort.Strings(missing)
+				ctxzap.Extract(ctx).Warn(
+					"baton-file: file contains resource types not registered at startup; restart the service to sync them",
+					zap.Strings("resource_types", missing))
+			}
+		}
 	}
 
 	return nil, nil
@@ -312,19 +343,44 @@ func (fc *FileConnector) ResourceSyncers(ctx context.Context) []connectorbuilder
 	}
 
 	var syncers []connectorbuilder.ResourceSyncerV2
-	for _, rt := range cache.resourceTypes {
-		// resourceType is INTENTIONALLY frozen at registration time and never
-		// refreshed from later cache generations. Hot-load covers the file's
-		// data sections only; schema — the set of resource types and their
-		// traits — is fixed for the process lifetime because the SDK registers
-		// syncers by type exactly once. Editing an existing type's trait in
-		// the file therefore requires a restart, same as adding a new type;
-		// resolving rt from the live cache here would not change that, since
-		// the SDK-side registration would still hold the startup-time type.
-		syncers = append(syncers, &resourceBuilder{cache: &fc.cache, resourceType: rt})
+	if len(cache.resourceTypes) == 0 {
+		// A valid file with no data rows is a legitimate state — an empty
+		// source of truth — not an error. Register the standard trait types
+		// (the same set StaticCapabilitiesConnector declares as this
+		// connector's capabilities) so syncs succeed, emit nothing, and
+		// data rows added to the file later hot-load without a restart.
+		// Rows using CUSTOM type IDs still need a restart, like any schema
+		// change; Validate() warns when it sees them.
+		for name := range TraitMap {
+			syncers = append(syncers, &resourceBuilder{
+				cache:        &fc.cache,
+				resourceType: buildDynamicResourceType(name, name),
+			})
+		}
+		l.Info("baton-file: input file has no data rows; registered standard resource types",
+			zap.Int("count", len(syncers)))
+	} else {
+		for _, rt := range cache.resourceTypes {
+			// resourceType is INTENTIONALLY frozen at registration time and
+			// never refreshed from later cache generations. Hot-load covers
+			// the file's data sections only; schema — the set of resource
+			// types and their traits — is fixed for the process lifetime
+			// because the SDK registers syncers by type exactly once.
+			// Editing an existing type's trait in the file therefore
+			// requires a restart, same as adding a new type; resolving rt
+			// from the live cache here would not change that, since the
+			// SDK-side registration would still hold the startup-time type.
+			syncers = append(syncers, &resourceBuilder{cache: &fc.cache, resourceType: rt})
+		}
+		l.Info("baton-file: created resource syncers", zap.Int("count", len(syncers)))
 	}
 
-	l.Info("baton-file: created resource syncers", zap.Int("count", len(syncers)))
+	fc.registeredTypes = make(map[string]struct{}, len(syncers))
+	for _, s := range syncers {
+		if rb, ok := s.(*resourceBuilder); ok {
+			fc.registeredTypes[rb.resourceType.GetId()] = struct{}{}
+		}
+	}
 	return syncers
 }
 

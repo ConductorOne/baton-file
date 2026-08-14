@@ -48,6 +48,21 @@ const hotReloadCSVInvalid = hotReloadCSVBase +
 	`user,alex.taylor,Alex Duplicate,alex.duplicate@example.com,enabled,human,,,,,,,,
 `
 
+// hotReloadCSVHeaderOnly is a valid file with schema but zero data rows — a
+// legitimate empty source of truth, not an error.
+const hotReloadCSVHeaderOnly = `record_type,id,display_name,email,status,type,profile.department,profile.title,resource_type,trait,description,resource_id,entitlement_slug,principal_id
+`
+
+// hotReloadCSVStandardTypes uses only type IDs within the standard trait set
+// (user, group) that an empty-start connector registers.
+const hotReloadCSVStandardTypes = hotReloadCSVHeaderOnly +
+	`user,alex.taylor,Alex Taylor,alex.taylor@example.com,enabled,human,Engineering,Software Engineer,,,,,,
+user,sam.johnson,Sam Johnson,sam.johnson@example.com,enabled,human,Marketing,Marketing Manager,,,,,,
+resource,platform,Platform,,,,,,group,group,Platform group,,,
+entitlement,,Member,,,,,,,,,platform,member,
+direct_user_grant,,,,,,,,,,,platform,member,alex.taylor
+`
+
 // startServer writes the CSV and constructs the connector through the real
 // SDK entry point, mirroring a service-mode process start.
 func startServer(t *testing.T, path, csv string) (types.ConnectorServer, *FileConnector) {
@@ -207,6 +222,50 @@ func TestHotReload_InvalidFileKeepsLastGoodCache(t *testing.T) {
 	require.Error(t, serverValidate(t, server))
 
 	require.Len(t, listAll(t, server, "user", 0), 2)
+}
+
+func TestHotReload_EmptyFileAtStartupSyncsAndHotLoads(t *testing.T) {
+	// A valid file with no data rows must work: the connector registers the
+	// standard trait types (matching its declared capabilities), syncs
+	// empty, and hot-loads data rows added later.
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "input.csv")
+	server, _ := startServer(t, path, hotReloadCSVHeaderOnly)
+
+	rts, err := server.ListResourceTypes(ctx, v2.ResourceTypesServiceListResourceTypesRequest_builder{}.Build())
+	require.NoError(t, err)
+	require.Len(t, rts.GetList(), len(TraitMap))
+	require.Empty(t, listAll(t, server, "user", 0))
+	require.Empty(t, listAll(t, server, "group", 0))
+
+	// Data rows using standard type IDs appear on the next sync.
+	require.NoError(t, os.WriteFile(path, []byte(hotReloadCSVStandardTypes), 0o600))
+	require.NoError(t, serverValidate(t, server))
+
+	require.Len(t, listAll(t, server, "user", 0), 2)
+	platform := findResource(t, server, "group", "platform")
+	require.Len(t, listGrants(t, server, platform), 1)
+}
+
+func TestHotReload_CustomTypeAfterEmptyStartRequiresRestart(t *testing.T) {
+	// Custom type IDs are schema: an empty-start connector registered only
+	// the standard trait types, so rows with a custom type (here "team")
+	// do not sync until restart — the documented schema-change contract.
+	// Validate() warns about them; this test pins the RPC-visible behavior.
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "input.csv")
+	server, _ := startServer(t, path, hotReloadCSVHeaderOnly)
+
+	require.NoError(t, os.WriteFile(path, []byte(hotReloadCSVBase), 0o600))
+	require.NoError(t, serverValidate(t, server))
+
+	// Users hot-load (standard type); the "team"-typed resource has no
+	// registered syncer, so listing it fails with NotFound until restart.
+	require.Len(t, listAll(t, server, "user", 0), 2)
+	_, err := server.ListResources(ctx, v2.ResourcesServiceListResourcesRequest_builder{
+		ResourceTypeId: "team",
+	}.Build())
+	require.Equal(t, codes.NotFound, status.Code(err))
 }
 
 func TestHotReload_InvalidFileAtStartupRequiresRestart(t *testing.T) {

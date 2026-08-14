@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/conductorone/baton-file/pkg/client"
@@ -28,6 +29,38 @@ import (
 type FileConnector struct {
 	inputFilePath string
 	cache         cacheHolder
+
+	// refreshMu serializes the read → build → publish sequence (refresh).
+	// The holder's atomic pointer keeps readers lock-free, but without this
+	// lock two concurrent Validate() calls (a health probe racing a sync
+	// start across two file edits) could publish out of order and leave the
+	// holder one generation stale until the next Validate(). A
+	// CompareAndSwap loop cannot fix that: generations are content hashes
+	// with no ordering, so on CAS failure there is no way to tell which
+	// build is newer. Serializing the whole sequence makes publish order
+	// follow file-read order, and also prevents two full cache builds from
+	// running concurrently (which would triple peak memory).
+	refreshMu sync.Mutex
+}
+
+// refresh re-reads the input file and publishes a fresh cache when its
+// contents changed, returning the cache now being served and whether it was
+// republished. On error nothing is stored, so the previously published cache
+// keeps serving last-known-good data.
+func (fc *FileConnector) refresh(ctx context.Context) (*syncCache, bool, error) {
+	fc.refreshMu.Lock()
+	defer fc.refreshMu.Unlock()
+
+	previous := fc.cache.load()
+	cache, err := loadValidatedCache(ctx, fc.inputFilePath, previous)
+	if err != nil {
+		return nil, false, err
+	}
+	if cache == previous {
+		return cache, false, nil
+	}
+	fc.cache.store(cache)
+	return cache, true, nil
 }
 
 // cacheHolder shares the live syncCache between the FileConnector and every
@@ -41,11 +74,10 @@ type FileConnector struct {
 // where the input file is re-read and the fresh syncCache is published here.
 // Data-section changes to the file MUST be picked up on the next sync without
 // a restart; only schema changes (a new resource type, or a trait change to
-// an existing type) require one. Do NOT
-// move the file load back to construction time, capture a *syncCache snapshot
-// in a builder, or assume the SDK refreshes anything between syncs (it does
-// not — that assumption caused the original hot-load regression in PR #40).
-// TestHotReload_DataChangesPickedUpBySync enforces this contract.
+// an existing type) require one. Do NOT capture a *syncCache snapshot in a
+// builder, and do NOT assume the SDK refreshes anything between syncs (it
+// does not — that assumption caused the original hot-load regression in
+// PR #40). TestHotReload_DataChangesPickedUpBySync enforces this contract.
 //
 // This is deliberate instance state, a documented deviation from the skills'
 // stateless-connector rule: that rule assumes a remote API as the source of
@@ -67,6 +99,13 @@ type FileConnector struct {
 // sync-lifecycle hook exists. The fingerprint short-circuit in
 // loadValidatedCache confines this to actual content changes — unchanged
 // files never swap.
+//
+// Known limit: hot-load requires a successful start. ResourceSyncers()
+// performs the first load at construction; if the file is invalid at that
+// moment, zero resource types are registered for the process lifetime and
+// every sync fails until the file is fixed AND the process restarts (see
+// ResourceSyncers). TestHotReload_InvalidFileAtStartupRequiresRestart pins
+// this behavior.
 type cacheHolder struct {
 	p atomic.Pointer[syncCache]
 }
@@ -172,16 +211,12 @@ func (fc *FileConnector) Validate(ctx context.Context) (annotations.Annotations,
 
 	// Re-read, validate, and publish the file's current contents. Validate()
 	// runs at the start of every sync, so this is the hot-load refresh point
-	// (see cacheHolder). On error we return without storing, so the
-	// previously published cache keeps serving last-known-good data.
-	previous := fc.cache.load()
-	cache, err := loadValidatedCache(ctx, fc.inputFilePath, previous)
+	// (see cacheHolder).
+	cache, changed, err := fc.refresh(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if cache != previous {
-		fc.cache.store(cache)
-
+	if changed {
 		// Debug, not Info: this fires on every sync AND every health-check
 		// probe, so Info would flood default logs on probed deployments.
 		ctxzap.Extract(ctx).Debug("baton-file: refreshed data from input file",
@@ -252,27 +287,28 @@ func loadValidatedCache(ctx context.Context, inputFilePath string, current *sync
 func (fc *FileConnector) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncerV2 {
 	l := ctxzap.Extract(ctx)
 
-	// IMPORTANT: the SDK calls this exactly ONCE per process, at connector
-	// construction, to register resource types — never again. Only the schema
-	// (the set of syncers) is fixed here; the data each builder serves flows
-	// through the shared fc.cache holder so Validate() can refresh it every
-	// sync. See cacheHolder for the hot-load contract.
-	cache := fc.cache.load()
-	if cache == nil {
-		// Validate() normally runs first and publishes the cache; this
-		// fallback covers entry points that skip Validate(). This method's
-		// signature cannot return an error, so log-and-return-nil is
-		// intentional — the connector stays alive for the next sync cycle.
+	// IMPORTANT: the SDK calls this exactly ONCE per process, inside
+	// connectorbuilder.NewConnector at construction (vendor/.../
+	// connectorbuilder/connectorbuilder.go:216), BEFORE any Validate() —
+	// this is the FIRST load of the file, not a fallback. The set of
+	// resource types registered here is fixed for the process lifetime;
+	// Validate() then refreshes the data behind fc.cache on every sync. See
+	// cacheHolder for the hot-load contract.
+	cache, _, err := fc.refresh(ctx)
+	if err != nil {
+		// The signature cannot return an error, so log-and-return-nil is
+		// all that is possible — and the consequence is severe: with zero
+		// syncers registered, every sync fails with FailedPrecondition
+		// ("no resource builders found", vendor/.../connectorbuilder/
+		// resource_syncer.go:102) even after the operator fixes the file.
+		// Recovering from a bad file AT STARTUP requires a process restart;
+		// hot-load only helps a connector that started with a valid file.
 		// Warn, not Error: Validate() returns the real error to the SDK on
 		// every sync, so this log is a secondary signal, and house rules
-		// classify input/config failures as Warn.
-		var err error
-		cache, err = loadValidatedCache(ctx, fc.inputFilePath, nil)
-		if err != nil {
-			l.Warn("baton-file: failed to load input file", zap.Error(err))
-			return nil
-		}
-		fc.cache.store(cache)
+		// classify input failures as Warn.
+		l.Warn("baton-file: failed to load input file at startup; syncs will fail until the file is fixed and the service is restarted",
+			zap.Error(err))
+		return nil
 	}
 
 	var syncers []connectorbuilder.ResourceSyncerV2

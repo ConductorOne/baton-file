@@ -48,13 +48,24 @@ func paginate[T any](items []T, gen string, tokenStr string, tokenSize int) ([]T
 		tokenGen, offsetStr, found := strings.Cut(tokenStr, ":")
 		switch {
 		case !found:
-			// Legacy numeric token: honor it as a plain offset so an
-			// in-flight sync survives a binary upgrade.
+			// Bare numeric token. If this cache has a generation (every
+			// production cache does — loadValidatedCache always stamps one),
+			// the token is legacy, minted by a pre-generation binary. Its
+			// generation is unknowable and it can only arrive after a
+			// process restart — exactly when the file may have changed while
+			// the service was down — so restart the listing like a
+			// generation mismatch rather than replay an offset into a slice
+			// it was never minted against. A generation-less cache (tests
+			// build them directly) mints bare tokens itself, so there the
+			// offset is trusted; restarting would loop forever. Malformed
+			// tokens are rejected either way.
 			parsed, err := parseOffset(tokenStr, tokenStr)
 			if err != nil {
 				return nil, "", err
 			}
-			offset = parsed
+			if gen == "" {
+				offset = parsed
+			}
 		case tokenGen != gen:
 			// The token was minted against a different cache generation: the
 			// file changed and the cache was swapped while this listing was

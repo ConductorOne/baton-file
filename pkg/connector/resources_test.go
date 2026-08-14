@@ -165,11 +165,21 @@ func TestPaginate_GenerationMismatchRestartsListing(t *testing.T) {
 	require.Equal(t, "gen2:2", next)
 }
 
-func TestPaginate_LegacyNumericTokenHonored(t *testing.T) {
-	// Bare numeric tokens (minted by a pre-generation binary) resume as plain
-	// offsets so an in-flight sync survives a binary upgrade.
+func TestPaginate_LegacyNumericTokenRestartsListing(t *testing.T) {
+	// Against a generation-stamped cache, bare numeric tokens (minted by a
+	// pre-generation binary) restart the listing: their generation is
+	// unknowable and they only appear after a restart, when the file may
+	// have changed. Malformed ones still error (see TestPaginate_InvalidToken).
 	items := []int{10, 20, 30}
 	page, next, err := paginate(items, "gen1", "2", 2)
+	require.NoError(t, err)
+	require.Equal(t, []int{10, 20}, page)
+	require.Equal(t, "gen1:2", next)
+
+	// Against a generation-less cache (tests build these directly), bare
+	// numeric tokens are the cache's own mint format and must be honored —
+	// restarting would loop forever.
+	page, next, err = paginate(items, "", "2", 2)
 	require.NoError(t, err)
 	require.Equal(t, []int{30}, page)
 	require.Empty(t, next)

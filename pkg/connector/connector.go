@@ -56,6 +56,17 @@ type FileConnector struct {
 // cache generation (syncCache.gen) so an in-flight listing restarts instead
 // of resuming into a different generation's offsets. During a swap both old
 // and new caches are briefly live (~2x peak memory for the dataset).
+//
+// Known limit: generation stamps make each individual listing consistent,
+// not a whole sync. If the file genuinely changes mid-sync and a health
+// probe swaps the cache, phases that already ran (e.g. List) reflect the old
+// generation while later phases (e.g. Grants) reflect the new one — a
+// one-sync inconsistency (such as a grant whose principal was never listed)
+// that the next sync heals. The connector cannot pin a cache per sync: a
+// probe Validate and a sync-start Validate arrive as the same RPC, and no
+// sync-lifecycle hook exists. The fingerprint short-circuit in
+// loadValidatedCache confines this to actual content changes — unchanged
+// files never swap.
 type cacheHolder struct {
 	p atomic.Pointer[syncCache]
 }
@@ -163,24 +174,31 @@ func (fc *FileConnector) Validate(ctx context.Context) (annotations.Annotations,
 	// runs at the start of every sync, so this is the hot-load refresh point
 	// (see cacheHolder). On error we return without storing, so the
 	// previously published cache keeps serving last-known-good data.
-	cache, err := loadValidatedCache(ctx, fc.inputFilePath)
+	previous := fc.cache.load()
+	cache, err := loadValidatedCache(ctx, fc.inputFilePath, previous)
 	if err != nil {
 		return nil, err
 	}
-	fc.cache.store(cache)
+	if cache != previous {
+		fc.cache.store(cache)
 
-	// Debug, not Info: this fires on every sync AND every health-check
-	// probe, so Info would flood default logs on probed deployments.
-	ctxzap.Extract(ctx).Debug("baton-file: refreshed data from input file",
-		zap.Int("resource_types", len(cache.resourceTypes)),
-		zap.Int("resources", len(cache.resources)))
+		// Debug, not Info: this fires on every sync AND every health-check
+		// probe, so Info would flood default logs on probed deployments.
+		ctxzap.Extract(ctx).Debug("baton-file: refreshed data from input file",
+			zap.Int("resource_types", len(cache.resourceTypes)),
+			zap.Int("resources", len(cache.resources)))
+	}
 
 	return nil, nil
 }
 
 // loadValidatedCache reads the input file, runs all cross-record validations,
-// and builds the derived sync cache from it.
-func loadValidatedCache(ctx context.Context, inputFilePath string) (*syncCache, error) {
+// and builds the derived sync cache from it. When the file's content
+// fingerprint matches the current cache's generation, current is returned
+// unchanged: the rebuild would be identical, and skipping it both avoids
+// redundant work on health-check probes and keeps no-op Validate calls from
+// swapping the pointer under an in-flight sync.
+func loadValidatedCache(ctx context.Context, inputFilePath string, current *syncCache) (*syncCache, error) {
 	// Fingerprint the raw bytes to stamp this build's generation into page
 	// tokens (see paginate). Hashing raw content is format-agnostic and
 	// exact, and the extra read is cheap next to parsing — the loaders take
@@ -192,6 +210,11 @@ func loadValidatedCache(ctx context.Context, inputFilePath string) (*syncCache, 
 		return nil, fmt.Errorf("baton-file: failed to read input file: %w", err)
 	}
 	sum := sha256.Sum256(raw)
+	gen := hex.EncodeToString(sum[:8])
+
+	if current != nil && current.gen == gen {
+		return current, nil
+	}
 
 	data, err := client.LoadFileData(inputFilePath)
 	if err != nil {
@@ -222,7 +245,7 @@ func loadValidatedCache(ctx context.Context, inputFilePath string) (*syncCache, 
 	if err != nil {
 		return nil, err
 	}
-	cache.gen = hex.EncodeToString(sum[:8])
+	cache.gen = gen
 	return cache, nil
 }
 
@@ -244,7 +267,7 @@ func (fc *FileConnector) ResourceSyncers(ctx context.Context) []connectorbuilder
 		// every sync, so this log is a secondary signal, and house rules
 		// classify input/config failures as Warn.
 		var err error
-		cache, err = loadValidatedCache(ctx, fc.inputFilePath)
+		cache, err = loadValidatedCache(ctx, fc.inputFilePath, nil)
 		if err != nil {
 			l.Warn("baton-file: failed to load input file", zap.Error(err))
 			return nil

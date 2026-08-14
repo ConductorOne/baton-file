@@ -137,6 +137,27 @@ func TestHotReload_SwapMidListingRestartsPagination(t *testing.T) {
 	require.Equal(t, map[string]int{"alex.taylor": 1, "sam.johnson": 1, "jordan.lee": 1}, seen)
 }
 
+func TestHotReload_UnchangedFileSkipsRebuildAndSwap(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "input.csv")
+	fc, _ := startConnector(t, path, hotReloadCSVBase)
+
+	// A Validate against unchanged content (every health probe, and every
+	// sync where nobody edited the file) must return the already-published
+	// cache: no rebuild, and critically no pointer swap under an in-flight
+	// sync. Pointer identity is the contract.
+	before := fc.cache.load()
+	_, err := fc.Validate(ctx)
+	require.NoError(t, err)
+	require.Same(t, before, fc.cache.load())
+
+	// A real change still swaps.
+	require.NoError(t, os.WriteFile(path, []byte(hotReloadCSVUpdated), 0o600))
+	_, err = fc.Validate(ctx)
+	require.NoError(t, err)
+	require.NotSame(t, before, fc.cache.load())
+}
+
 func TestHotReload_InvalidFileKeepsLastGoodCache(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "input.csv")

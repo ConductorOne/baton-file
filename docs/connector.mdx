@@ -34,6 +34,7 @@ Resource types are defined by the input file (via each row's `trait`), so the ex
 - **Read-only.** The connector cannot create, modify, revoke, or deprovision access in the source system — it only reads what the file describes.
 - **Full sync only.** Every sync reads the entire file; there is no incremental/targeted sync.
 - **File-defined data.** C1 only knows what the file contains. Resource IDs must be globally unique across users and resources.
+- **File edits apply on the next sync.** When the connector runs as a long-lived service, changes to the file's data — users, resources, entitlements, grants, and inheritance mappings — are picked up automatically at the start of the next sync, with no restart needed. Adding a new resource type, or changing an existing type's trait, does require restarting the connector. If an edited file fails validation, the sync fails with the validation error and the connector keeps serving the last successfully loaded data.
 
 ## Gather File connector credentials
 

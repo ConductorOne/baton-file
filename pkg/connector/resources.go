@@ -15,6 +15,15 @@ import (
 
 const pageSize = 1000
 
+// maxListingRestarts bounds how many times one listing may restart because
+// its token's cache generation went stale (the file changed mid-listing).
+// Without a bound, a file rewritten continuously under frequent Validate
+// probes would restart the listing forever and the sync would never finish;
+// failing loudly after a few attempts turns unbounded work into a clear,
+// retryable sync error. The count rides the page token, so it is stateless
+// and scoped to one listing chain.
+const maxListingRestarts = 3
+
 // clampPageSize returns requested if it is within (0, pageSize], otherwise
 // returns pageSize. Guards against zero (SDK default) and oversized requests.
 func clampPageSize(requested int) int {
@@ -36,16 +45,45 @@ func parseOffset(tokenStr, offsetStr string) (int, error) {
 	return parsed, nil
 }
 
+// mintToken encodes the next-page token. An empty gen (caches built directly
+// in tests) mints legacy bare-numeric tokens; a zero restart count keeps the
+// canonical "<gen>:<offset>" form; restarted listings carry the count as a
+// third segment so the restart bound survives statelessly across pages.
+func mintToken(gen string, offset, restarts int) string {
+	if gen == "" {
+		return strconv.Itoa(offset)
+	}
+	if restarts == 0 {
+		return gen + ":" + strconv.Itoa(offset)
+	}
+	return gen + ":" + strconv.Itoa(offset) + ":" + strconv.Itoa(restarts)
+}
+
+// parseRestarts validates the optional third token segment. Absent means 0.
+func parseRestarts(tokenStr, restartsStr string) (int, error) {
+	if restartsStr == "" {
+		return 0, nil
+	}
+	parsed, err := strconv.Atoi(restartsStr)
+	if err != nil || parsed < 1 || parsed > maxListingRestarts {
+		return 0, fmt.Errorf("baton-file: invalid page token %q: bad restart count", tokenStr)
+	}
+	return parsed, nil
+}
+
 func paginate[T any](ctx context.Context, items []T, gen string, tokenStr string, tokenSize int) ([]T, string, error) {
 	// SDK sends Size=0 during sync_full; clamp converts it to pageSize so we never return an empty page.
 	size := clampPageSize(tokenSize)
 
 	// Empty token means first page. Tokens minted by this version are
-	// "<gen>:<offset>" where gen fingerprints the cache the offset indexes
-	// into; bare numeric tokens are the legacy (pre-generation) format.
+	// "<gen>:<offset>[:<restarts>]" where gen fingerprints the cache the
+	// offset indexes into; bare numeric tokens are the legacy
+	// (pre-generation) format. See mintToken.
 	offset := 0
+	restarts := 0
 	if tokenStr != "" {
-		tokenGen, offsetStr, found := strings.Cut(tokenStr, ":")
+		tokenGen, rest, found := strings.Cut(tokenStr, ":")
+		offsetStr, restartsStr, _ := strings.Cut(rest, ":")
 		switch {
 		case !found:
 			// Bare numeric token. If this cache has a generation (every
@@ -66,6 +104,7 @@ func paginate[T any](ctx context.Context, items []T, gen string, tokenStr string
 			if gen == "" {
 				offset = parsed
 			} else {
+				restarts = 1
 				ctxzap.Extract(ctx).Warn(
 					"baton-file: legacy page token from a pre-upgrade binary; restarting listing from the beginning")
 			}
@@ -79,18 +118,34 @@ func paginate[T any](ctx context.Context, items []T, gen string, tokenStr string
 			// upserts, so re-emitting earlier pages is safe. Warn so
 			// operators can SEE cross-generation restarts (and the
 			// cross-phase consistency window documented on cacheHolder)
-			// instead of inferring them.
+			// instead of inferring them. A file rewritten faster than the
+			// listing can finish would restart forever, so restarts are
+			// bounded: failing loudly beats unbounded work.
+			prior, err := parseRestarts(tokenStr, restartsStr)
+			if err != nil {
+				return nil, "", err
+			}
+			restarts = prior + 1
+			if restarts > maxListingRestarts {
+				return nil, "", fmt.Errorf(
+					"baton-file: listing restarted %d times because the input file kept changing mid-listing; the file is being rewritten faster than syncs can read it", prior)
+			}
 			ctxzap.Extract(ctx).Warn(
 				"baton-file: page token was minted against a different cache generation (file changed mid-listing); restarting listing from the beginning",
 				zap.String("token_generation", tokenGen),
-				zap.String("current_generation", gen))
-			offset = 0
+				zap.String("current_generation", gen),
+				zap.Int("restarts", restarts))
 		default:
 			parsed, err := parseOffset(tokenStr, offsetStr)
 			if err != nil {
 				return nil, "", err
 			}
+			prior, err := parseRestarts(tokenStr, restartsStr)
+			if err != nil {
+				return nil, "", err
+			}
 			offset = parsed
+			restarts = prior
 		}
 	}
 
@@ -107,15 +162,10 @@ func paginate[T any](ctx context.Context, items []T, gen string, tokenStr string
 		end = len(items)
 	}
 
-	// Empty next token signals the SDK that there are no more pages. An empty
-	// gen (caches built directly in tests) mints legacy numeric tokens.
+	// Empty next token signals the SDK that there are no more pages.
 	var next string
 	if end < len(items) {
-		if gen == "" {
-			next = strconv.Itoa(end)
-		} else {
-			next = gen + ":" + strconv.Itoa(end)
-		}
+		next = mintToken(gen, end, restarts)
 	}
 	return items[offset:end], next, nil
 }

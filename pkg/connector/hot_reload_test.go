@@ -9,7 +9,11 @@ import (
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
 	"github.com/conductorone/baton-sdk/pkg/types"
+	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -272,26 +276,47 @@ func TestHotReload_SchemaDriftCheckIsLevelTriggered(t *testing.T) {
 	// Schema drift (file types with no registered syncer) persists until
 	// restart, so its detection must run on EVERY Validate — including ones
 	// where the file content is unchanged — not just the sync where the
-	// drift first appeared. The occurrence counter drives logarithmic log
-	// sampling (warns at 1, 2, 4, 8, ...) and is the observable contract.
+	// drift first appeared. The Warn is sampled logarithmically (occurrences
+	// 1, 2, 4, 8, ...) so probed deployments are not flooded; the emitted
+	// logs are the observable contract, asserted via a zap observer.
+	core, logs := observer.New(zapcore.WarnLevel)
+	ctx := ctxzap.ToContext(context.Background(), zap.New(core))
 	path := filepath.Join(t.TempDir(), "input.csv")
 	server, fc := startServer(t, path, hotReloadCSVHeaderOnly)
 
+	validate := func() {
+		t.Helper()
+		_, err := server.Validate(ctx, v2.ConnectorServiceValidateRequest_builder{}.Build())
+		require.NoError(t, err)
+	}
+	driftWarns := func() []observer.LoggedEntry {
+		return logs.FilterMessageSnippet("not registered at startup").All()
+	}
+
 	// Introduce a custom "team" type that the empty start did not register.
 	require.NoError(t, os.WriteFile(path, []byte(hotReloadCSVBase), 0o600))
-	require.NoError(t, serverValidate(t, server))
-	require.EqualValues(t, 1, fc.driftOccurrences.Load())
 
-	// The file does not change, but the drift persists — every subsequent
-	// Validate (sync start or health probe) must still count it.
-	require.NoError(t, serverValidate(t, server))
-	require.NoError(t, serverValidate(t, server))
-	require.EqualValues(t, 3, fc.driftOccurrences.Load())
+	// The file changes only before occurrence 1; the drift persists through
+	// the unchanged Validates that follow. Warns at 1, 2 and 4, not at 3.
+	validate()
+	require.Len(t, driftWarns(), 1)
+	validate()
+	require.Len(t, driftWarns(), 2)
+	validate()
+	require.Len(t, driftWarns(), 2, "occurrence 3 is sampled out")
+	validate()
+	require.Len(t, driftWarns(), 3)
+	require.EqualValues(t, 4, fc.driftOccurrences.Load())
 
-	// Drift resolves (only standard types remain): counter resets so a new
-	// drift episode warns immediately.
+	for i, want := range []uint64{1, 2, 4} {
+		require.EqualValues(t, want, driftWarns()[i].ContextMap()["total_occurrences"])
+	}
+
+	// Drift resolves (only standard types remain): no new warn, and the
+	// counter resets so a new drift episode warns immediately.
 	require.NoError(t, os.WriteFile(path, []byte(hotReloadCSVStandardTypes), 0o600))
-	require.NoError(t, serverValidate(t, server))
+	validate()
+	require.Len(t, driftWarns(), 3)
 	require.EqualValues(t, 0, fc.driftOccurrences.Load())
 }
 

@@ -9,7 +9,11 @@ import (
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
+	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 // testBuilder wraps a pre-built cache in a holder, mirroring what
@@ -133,7 +137,11 @@ func TestPaginate_StaleOffset(t *testing.T) {
 
 func TestPaginate_InvalidToken(t *testing.T) {
 	items := []int{1, 2, 3}
-	for _, tok := range []string{"not-a-number", "abc", "-1", "0", "gen1:abc", "gen1:-1", "gen1:0"} {
+	for _, tok := range []string{
+		"not-a-number", "abc", "-1", "0",
+		"gen1:abc", "gen1:-1", "gen1:0",
+		"gen1:2:abc", "gen1:2:0", "gen1:2:99", "gen0:2:abc",
+	} {
 		_, _, err := paginate(context.Background(), items, "gen1", tok, 0)
 		require.Error(t, err, "token %q should return error", tok)
 	}
@@ -158,11 +166,45 @@ func TestPaginate_GenerationMismatchRestartsListing(t *testing.T) {
 	// A token minted against a different cache generation must restart the
 	// listing at the beginning instead of replaying its offset — offsets are
 	// meaningless across generations (hot-load swapped the cache mid-listing).
+	// The restart must also be observable: exactly one Warn naming both
+	// generations, since it is the runtime signal for the cross-phase
+	// consistency window documented on cacheHolder.
+	core, logs := observer.New(zapcore.WarnLevel)
+	ctx := ctxzap.ToContext(context.Background(), zap.New(core))
+
 	items := []int{10, 20, 30}
-	page, next, err := paginate(context.Background(), items, "gen2", "gen1:2", 2)
+	page, next, err := paginate(ctx, items, "gen2", "gen1:2", 2)
 	require.NoError(t, err)
 	require.Equal(t, []int{10, 20}, page)
-	require.Equal(t, "gen2:2", next)
+	require.Equal(t, "gen2:2:1", next, "restarted listings carry the restart count in the token")
+
+	entries := logs.FilterMessageSnippet("different cache generation").All()
+	require.Len(t, entries, 1)
+	fields := entries[0].ContextMap()
+	require.Equal(t, "gen1", fields["token_generation"])
+	require.Equal(t, "gen2", fields["current_generation"])
+}
+
+func TestPaginate_RestartBoundFailsLoudly(t *testing.T) {
+	// A file rewritten faster than a listing can finish would restart the
+	// listing forever; after maxListingRestarts the sync must fail with a
+	// clear error instead of doing unbounded work. The count rides the
+	// token, so it survives across pages statelessly.
+	ctx := context.Background()
+	items := []int{10, 20, 30}
+
+	next := "gen1:2"
+	for round := 2; round <= maxListingRestarts+1; round++ {
+		gen := fmt.Sprintf("gen%d", round)
+		page, n, err := paginate(ctx, items, gen, next, 2)
+		require.NoError(t, err, "restart %d is within the bound", round-1)
+		require.Equal(t, []int{10, 20}, page)
+		require.Equal(t, fmt.Sprintf("%s:2:%d", gen, round-1), n)
+		next = n
+	}
+
+	_, _, err := paginate(ctx, items, "genFinal", next, 2)
+	require.ErrorContains(t, err, "rewritten faster than syncs can read it")
 }
 
 func TestPaginate_LegacyNumericTokenRestartsListing(t *testing.T) {
@@ -170,19 +212,25 @@ func TestPaginate_LegacyNumericTokenRestartsListing(t *testing.T) {
 	// pre-generation binary) restart the listing: their generation is
 	// unknowable and they only appear after a restart, when the file may
 	// have changed. Malformed ones still error (see TestPaginate_InvalidToken).
+	// The restart emits exactly one observable Warn.
+	core, logs := observer.New(zapcore.WarnLevel)
+	ctx := ctxzap.ToContext(context.Background(), zap.New(core))
+
 	items := []int{10, 20, 30}
-	page, next, err := paginate(context.Background(), items, "gen1", "2", 2)
+	page, next, err := paginate(ctx, items, "gen1", "2", 2)
 	require.NoError(t, err)
 	require.Equal(t, []int{10, 20}, page)
-	require.Equal(t, "gen1:2", next)
+	require.Equal(t, "gen1:2:1", next, "the legacy restart counts toward the restart bound")
+	require.Len(t, logs.FilterMessageSnippet("legacy page token").All(), 1)
 
 	// Against a generation-less cache (tests build these directly), bare
 	// numeric tokens are the cache's own mint format and must be honored —
 	// restarting would loop forever.
-	page, next, err = paginate(context.Background(), items, "", "2", 2)
+	page, next, err = paginate(ctx, items, "", "2", 2)
 	require.NoError(t, err)
 	require.Equal(t, []int{30}, page)
 	require.Empty(t, next)
+	require.Len(t, logs.FilterMessageSnippet("legacy page token").All(), 1, "generation-less caches do not warn")
 }
 
 // Grants() behavior tests.

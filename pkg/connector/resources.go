@@ -22,6 +22,17 @@ const pageSize = 1000
 // failing loudly after a few attempts turns unbounded work into a clear,
 // retryable sync error. The count rides the page token, so it is stateless
 // and scoped to one listing chain.
+//
+// The bound counts CONSECUTIVE restarts: a page served under an unchanged
+// generation resets it (see paginate), so a checkpointed token cannot turn
+// one later file change into a hard failure. This is a deliberate
+// liveness-over-termination choice — churn timed to alternate with single
+// pages of progress can in principle defeat the bound, but that rhythm is
+// implausible against microsecond in-memory pages, task-level timeouts bound
+// a hung sync externally, and decaying the count instead of resetting it
+// fails the same alternating pattern (mismatch +1 / progress -1 oscillates
+// below any bound forever) while a cumulative count reintroduces the
+// checkpoint hard-failure. Do not "fix" this without solving that tension.
 const maxListingRestarts = 3
 
 // clampPageSize returns requested if it is within (0, pageSize], otherwise

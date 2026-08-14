@@ -308,6 +308,18 @@ func loadValidatedCache(ctx context.Context, inputFilePath string, current *sync
 
 		data, err = client.LoadFileData(inputFilePath)
 		if err != nil {
+			// A rewrite landing during the parse can tear the read and make
+			// a perfectly valid file transiently unparseable — at startup
+			// that would needlessly force a process restart. Distinguish a
+			// racing write from a genuinely invalid file by re-hashing:
+			// changed (or momentarily unreadable) bytes mean a racing write,
+			// so retry; unchanged bytes mean the parse error is real.
+			if attempt < maxLoadAttempts {
+				verify, verr := os.ReadFile(inputFilePath)
+				if verr != nil || sha256.Sum256(verify) != sum {
+					continue
+				}
+			}
 			return nil, fmt.Errorf("baton-file: input file is invalid: %w", err)
 		}
 

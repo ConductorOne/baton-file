@@ -207,6 +207,27 @@ func TestPaginate_RestartBoundFailsLoudly(t *testing.T) {
 	require.ErrorContains(t, err, "rewritten faster than syncs can read it")
 }
 
+func TestPaginate_ProgressResetsRestartBudget(t *testing.T) {
+	// Completing a page under the current generation means the churn episode
+	// is over: the restart count must reset rather than accumulate for the
+	// lifetime of the listing chain — otherwise a checkpointed token could
+	// turn one later file change into a hard failure.
+	ctx := context.Background()
+	items := []int{10, 20, 30, 40, 50}
+
+	// Same-generation resume with a maxed budget: progress clears it.
+	page, next, err := paginate(ctx, items, "gen2", "gen2:2:3", 2)
+	require.NoError(t, err)
+	require.Equal(t, []int{30, 40}, page)
+	require.Equal(t, "gen2:4", next, "the restart count is dropped after same-generation progress")
+
+	// A later mismatch starts counting from 1 again instead of failing.
+	page, next, err = paginate(ctx, items, "gen3", next, 2)
+	require.NoError(t, err)
+	require.Equal(t, []int{10, 20}, page)
+	require.Equal(t, "gen3:2:1", next)
+}
+
 func TestPaginate_LegacyNumericTokenRestartsListing(t *testing.T) {
 	// Against a generation-stamped cache, bare numeric tokens (minted by a
 	// pre-generation binary) restart the listing: their generation is

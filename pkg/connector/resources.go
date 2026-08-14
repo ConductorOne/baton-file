@@ -127,8 +127,13 @@ func paginate[T any](ctx context.Context, items []T, gen string, tokenStr string
 			}
 			restarts = prior + 1
 			if restarts > maxListingRestarts {
+				// Failed syncs fail out; service-mode tasks each use a fresh
+				// temp c1z, so the next sync starts with fresh page tokens.
+				// (A resumed local .c1z replays its checkpointed token —
+				// delete the file to reset if the error persists there.)
 				return nil, "", fmt.Errorf(
-					"baton-file: listing restarted %d times because the input file kept changing mid-listing; the file is being rewritten faster than syncs can read it", prior)
+					"baton-file: listing restarted %d times because the input file kept changing mid-listing; "+
+						"the file is being rewritten faster than syncs can read it", prior)
 			}
 			ctxzap.Extract(ctx).Warn(
 				"baton-file: page token was minted against a different cache generation (file changed mid-listing); restarting listing from the beginning",
@@ -140,12 +145,18 @@ func paginate[T any](ctx context.Context, items []T, gen string, tokenStr string
 			if err != nil {
 				return nil, "", err
 			}
-			prior, err := parseRestarts(tokenStr, restartsStr)
-			if err != nil {
+			// Validate the restart segment, but do not carry it forward:
+			// reaching this branch means the listing completed a page under
+			// the current generation — the churn episode is over, so the
+			// restart budget resets. Without the reset, the count would
+			// accumulate for the lifetime of a listing chain and a
+			// checkpointed token could turn one later file change into a
+			// hard failure.
+			if _, err := parseRestarts(tokenStr, restartsStr); err != nil {
 				return nil, "", err
 			}
 			offset = parsed
-			restarts = prior
+			restarts = 0
 		}
 	}
 

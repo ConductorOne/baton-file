@@ -282,26 +282,46 @@ func (fc *FileConnector) Validate(ctx context.Context) (annotations.Annotations,
 // redundant work on health-check probes and keeps no-op Validate calls from
 // swapping the pointer under an in-flight sync.
 func loadValidatedCache(ctx context.Context, inputFilePath string, current *syncCache) (*syncCache, error) {
-	// Fingerprint the raw bytes to stamp this build's generation into page
-	// tokens (see paginate). Hashing raw content is format-agnostic and
-	// exact, and the extra read is cheap next to parsing — the loaders take
-	// paths, not bytes, so reusing one read would mean restructuring them. A
-	// file edit racing between the two reads mislabels one build, which at
-	// worst restarts a listing.
-	raw, err := os.ReadFile(inputFilePath)
-	if err != nil {
-		return nil, fmt.Errorf("baton-file: failed to read input file: %w", err)
-	}
-	sum := sha256.Sum256(raw)
-	gen := hex.EncodeToString(sum[:8])
+	// The gen fingerprint stamped into page tokens (see paginate) must
+	// describe the bytes the parser actually consumed, but the loaders take
+	// a path rather than bytes, so the file is read twice: once to hash,
+	// once to parse. An edit racing between those reads would mislabel the
+	// build — and a later revert to the hashed content would then
+	// short-circuit onto the mislabeled cache indefinitely — so the file is
+	// hashed AGAIN after parsing and the load retried when the fingerprints
+	// disagree. Hashing raw content is format-agnostic and exact, and the
+	// extra reads are cheap next to parsing.
+	const maxLoadAttempts = 3
+	var data *client.LoadedData
+	var gen string
+	for attempt := 1; ; attempt++ {
+		raw, err := os.ReadFile(inputFilePath)
+		if err != nil {
+			return nil, fmt.Errorf("baton-file: failed to read input file: %w", err)
+		}
+		sum := sha256.Sum256(raw)
+		gen = hex.EncodeToString(sum[:8])
 
-	if current != nil && current.gen == gen {
-		return current, nil
-	}
+		if current != nil && current.gen == gen {
+			return current, nil
+		}
 
-	data, err := client.LoadFileData(inputFilePath)
-	if err != nil {
-		return nil, fmt.Errorf("baton-file: input file is invalid: %w", err)
+		data, err = client.LoadFileData(inputFilePath)
+		if err != nil {
+			return nil, fmt.Errorf("baton-file: input file is invalid: %w", err)
+		}
+
+		verify, err := os.ReadFile(inputFilePath)
+		if err != nil {
+			return nil, fmt.Errorf("baton-file: failed to read input file: %w", err)
+		}
+		if sha256.Sum256(verify) == sum {
+			break
+		}
+		if attempt >= maxLoadAttempts {
+			return nil, fmt.Errorf(
+				"baton-file: input file kept changing while being loaded; retry once the file is stable")
+		}
 	}
 
 	if err := client.ValidateUniqueIDs(data); err != nil {

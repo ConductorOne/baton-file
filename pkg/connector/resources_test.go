@@ -105,7 +105,7 @@ func TestPaginate_Exhaustion(t *testing.T) {
 	token := ""
 	pages := 0
 	for {
-		page, next, err := paginate(items, "", token, 0)
+		page, next, err := paginate(context.Background(), items, "", token, 0)
 		require.NoError(t, err)
 		require.LessOrEqual(t, len(page), pageSize)
 		pages++
@@ -125,7 +125,7 @@ func TestPaginate_Exhaustion(t *testing.T) {
 
 func TestPaginate_StaleOffset(t *testing.T) {
 	items := make([]int, 50)
-	page, next, err := paginate(items, "", "200", 0)
+	page, next, err := paginate(context.Background(), items, "", "200", 0)
 	require.NoError(t, err)
 	require.Empty(t, page)
 	require.Empty(t, next)
@@ -134,7 +134,7 @@ func TestPaginate_StaleOffset(t *testing.T) {
 func TestPaginate_InvalidToken(t *testing.T) {
 	items := []int{1, 2, 3}
 	for _, tok := range []string{"not-a-number", "abc", "-1", "0", "gen1:abc", "gen1:-1", "gen1:0"} {
-		_, _, err := paginate(items, "gen1", tok, 0)
+		_, _, err := paginate(context.Background(), items, "gen1", tok, 0)
 		require.Error(t, err, "token %q should return error", tok)
 	}
 }
@@ -143,12 +143,12 @@ func TestPaginate_GenerationStampedTokens(t *testing.T) {
 	items := []int{10, 20, 30}
 
 	// Tokens minted under a gen carry it; same-gen resume honors the offset.
-	page, next, err := paginate(items, "gen1", "", 2)
+	page, next, err := paginate(context.Background(), items, "gen1", "", 2)
 	require.NoError(t, err)
 	require.Equal(t, []int{10, 20}, page)
 	require.Equal(t, "gen1:2", next)
 
-	page, next, err = paginate(items, "gen1", next, 2)
+	page, next, err = paginate(context.Background(), items, "gen1", next, 2)
 	require.NoError(t, err)
 	require.Equal(t, []int{30}, page)
 	require.Empty(t, next)
@@ -159,7 +159,7 @@ func TestPaginate_GenerationMismatchRestartsListing(t *testing.T) {
 	// listing at the beginning instead of replaying its offset — offsets are
 	// meaningless across generations (hot-load swapped the cache mid-listing).
 	items := []int{10, 20, 30}
-	page, next, err := paginate(items, "gen2", "gen1:2", 2)
+	page, next, err := paginate(context.Background(), items, "gen2", "gen1:2", 2)
 	require.NoError(t, err)
 	require.Equal(t, []int{10, 20}, page)
 	require.Equal(t, "gen2:2", next)
@@ -171,7 +171,7 @@ func TestPaginate_LegacyNumericTokenRestartsListing(t *testing.T) {
 	// unknowable and they only appear after a restart, when the file may
 	// have changed. Malformed ones still error (see TestPaginate_InvalidToken).
 	items := []int{10, 20, 30}
-	page, next, err := paginate(items, "gen1", "2", 2)
+	page, next, err := paginate(context.Background(), items, "gen1", "2", 2)
 	require.NoError(t, err)
 	require.Equal(t, []int{10, 20}, page)
 	require.Equal(t, "gen1:2", next)
@@ -179,7 +179,7 @@ func TestPaginate_LegacyNumericTokenRestartsListing(t *testing.T) {
 	// Against a generation-less cache (tests build these directly), bare
 	// numeric tokens are the cache's own mint format and must be honored —
 	// restarting would loop forever.
-	page, next, err = paginate(items, "", "2", 2)
+	page, next, err = paginate(context.Background(), items, "", "2", 2)
 	require.NoError(t, err)
 	require.Equal(t, []int{30}, page)
 	require.Empty(t, next)

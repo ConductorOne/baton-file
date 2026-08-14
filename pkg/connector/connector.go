@@ -49,6 +49,14 @@ type FileConnector struct {
 	// file edit introduces types that have no registered syncer and
 	// therefore will not sync until restart.
 	registeredTypes map[string]struct{}
+
+	// driftOccurrences counts consecutive Validate() calls that observed
+	// unregistered resource types, driving logarithmic log sampling: the
+	// drift condition persists until restart, so it must warn repeatedly
+	// (level-triggered, not just on the sync where it appeared), but
+	// Validate also runs on every health probe, so warning every time
+	// would flood logs. Reset to zero when the drift resolves.
+	driftOccurrences atomic.Uint64
 }
 
 // refresh re-reads the input file and publishes a fresh cache when its
@@ -106,7 +114,11 @@ func (fc *FileConnector) refresh(ctx context.Context) (*syncCache, bool, error) 
 // probe Validate and a sync-start Validate arrive as the same RPC, and no
 // sync-lifecycle hook exists. The fingerprint short-circuit in
 // loadValidatedCache confines this to actual content changes — unchanged
-// files never swap.
+// files never swap. Because the window cannot be closed connector-side, it
+// is made observable instead: paginate() logs a Warn every time a
+// generation mismatch actually restarts a listing, so routine mid-sync
+// swaps (e.g. an externally rewritten file under frequent probes) show up
+// in logs rather than having to be inferred.
 //
 // Known limit: hot-load requires a successful start. ResourceSyncers()
 // performs the first load at construction; if the file is INVALID at that
@@ -233,25 +245,30 @@ func (fc *FileConnector) Validate(ctx context.Context) (annotations.Annotations,
 		ctxzap.Extract(ctx).Debug("baton-file: refreshed data from input file",
 			zap.Int("resource_types", len(cache.resourceTypes)),
 			zap.Int("resources", len(cache.resources)))
+	}
 
-		// Schema drift is otherwise silent: rows whose resource type was not
-		// registered at startup simply never sync. Warn so the operator
-		// knows a restart is needed for them. registeredTypes is nil only
-		// when ResourceSyncers() has not run (unit tests calling Validate
-		// directly); skip the check there.
-		if fc.registeredTypes != nil {
-			var missing []string
-			for typeID := range cache.resourceTypes {
-				if _, ok := fc.registeredTypes[typeID]; !ok {
-					missing = append(missing, typeID)
-				}
+	// Schema drift is otherwise silent: rows whose resource type was not
+	// registered at startup simply never sync. The condition persists until
+	// restart, so this check is level-triggered — it runs on EVERY
+	// Validate(), not just the one where the file changed — with logarithmic
+	// sampling (occurrences 1, 2, 4, 8, ...) so probed deployments are not
+	// flooded. registeredTypes is nil only when ResourceSyncers() has not
+	// run (unit tests calling Validate directly); skip the check there.
+	if fc.registeredTypes != nil {
+		var missing []string
+		for typeID := range cache.resourceTypes {
+			if _, ok := fc.registeredTypes[typeID]; !ok {
+				missing = append(missing, typeID)
 			}
-			if len(missing) > 0 {
-				sort.Strings(missing)
-				ctxzap.Extract(ctx).Warn(
-					"baton-file: file contains resource types not registered at startup; restart the service to sync them",
-					zap.Strings("resource_types", missing))
-			}
+		}
+		if len(missing) == 0 {
+			fc.driftOccurrences.Store(0)
+		} else if n := fc.driftOccurrences.Add(1); n&(n-1) == 0 {
+			sort.Strings(missing)
+			ctxzap.Extract(ctx).Warn(
+				"baton-file: file contains resource types not registered at startup; restart the service to sync them",
+				zap.Strings("resource_types", missing),
+				zap.Uint64("total_occurrences", n))
 		}
 	}
 

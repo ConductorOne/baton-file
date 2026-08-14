@@ -36,7 +36,7 @@ func parseOffset(tokenStr, offsetStr string) (int, error) {
 	return parsed, nil
 }
 
-func paginate[T any](items []T, gen string, tokenStr string, tokenSize int) ([]T, string, error) {
+func paginate[T any](ctx context.Context, items []T, gen string, tokenStr string, tokenSize int) ([]T, string, error) {
 	// SDK sends Size=0 during sync_full; clamp converts it to pageSize so we never return an empty page.
 	size := clampPageSize(tokenSize)
 
@@ -65,6 +65,9 @@ func paginate[T any](items []T, gen string, tokenStr string, tokenSize int) ([]T
 			}
 			if gen == "" {
 				offset = parsed
+			} else {
+				ctxzap.Extract(ctx).Warn(
+					"baton-file: legacy page token from a pre-upgrade binary; restarting listing from the beginning")
 			}
 		case tokenGen != gen:
 			// The token was minted against a different cache generation: the
@@ -73,7 +76,14 @@ func paginate[T any](items []T, gen string, tokenStr string, tokenSize int) ([]T
 			// resumed after a restart). Offsets are meaningless across
 			// generations — resuming would silently skip or duplicate items.
 			// Restart the listing instead: store writes are idempotent
-			// upserts, so re-emitting earlier pages is safe.
+			// upserts, so re-emitting earlier pages is safe. Warn so
+			// operators can SEE cross-generation restarts (and the
+			// cross-phase consistency window documented on cacheHolder)
+			// instead of inferring them.
+			ctxzap.Extract(ctx).Warn(
+				"baton-file: page token was minted against a different cache generation (file changed mid-listing); restarting listing from the beginning",
+				zap.String("token_generation", tokenGen),
+				zap.String("current_generation", gen))
 			offset = 0
 		default:
 			parsed, err := parseOffset(tokenStr, offsetStr)
@@ -129,42 +139,42 @@ func (b *resourceBuilder) ResourceType(ctx context.Context) *v2.ResourceType {
 	return b.resourceType
 }
 
-func (b *resourceBuilder) List(_ context.Context, parentResourceID *v2.ResourceId,
+func (b *resourceBuilder) List(ctx context.Context, parentResourceID *v2.ResourceId,
 	opts rs.SyncOpAttrs) ([]*v2.Resource, *rs.SyncOpResults, error) {
 	cache := b.cache.load()
 	if cache == nil {
 		return nil, nil, fmt.Errorf("baton-file: sync cache not initialized")
 	}
 	resources := cache.listIndex[listKey(b.resourceType.GetId(), parentResourceID)]
-	page, next, err := paginate(resources, cache.gen, opts.PageToken.Token, opts.PageToken.Size)
+	page, next, err := paginate(ctx, resources, cache.gen, opts.PageToken.Token, opts.PageToken.Size)
 	if err != nil {
 		return nil, nil, err
 	}
 	return page, &rs.SyncOpResults{NextPageToken: next}, nil
 }
 
-func (b *resourceBuilder) Entitlements(_ context.Context, resource *v2.Resource,
+func (b *resourceBuilder) Entitlements(ctx context.Context, resource *v2.Resource,
 	opts rs.SyncOpAttrs) ([]*v2.Entitlement, *rs.SyncOpResults, error) {
 	cache := b.cache.load()
 	if cache == nil {
 		return nil, nil, fmt.Errorf("baton-file: sync cache not initialized")
 	}
 	ents := cache.entIndex[resource.GetId().GetResource()]
-	page, next, err := paginate(ents, cache.gen, opts.PageToken.Token, opts.PageToken.Size)
+	page, next, err := paginate(ctx, ents, cache.gen, opts.PageToken.Token, opts.PageToken.Size)
 	if err != nil {
 		return nil, nil, err
 	}
 	return page, &rs.SyncOpResults{NextPageToken: next}, nil
 }
 
-func (b *resourceBuilder) Grants(_ context.Context, resource *v2.Resource,
+func (b *resourceBuilder) Grants(ctx context.Context, resource *v2.Resource,
 	opts rs.SyncOpAttrs) ([]*v2.Grant, *rs.SyncOpResults, error) {
 	cache := b.cache.load()
 	if cache == nil {
 		return nil, nil, fmt.Errorf("baton-file: sync cache not initialized")
 	}
 	grants := cache.grantsIndex[resource.GetId().GetResource()]
-	page, next, err := paginate(grants, cache.gen, opts.PageToken.Token, opts.PageToken.Size)
+	page, next, err := paginate(ctx, grants, cache.gen, opts.PageToken.Token, opts.PageToken.Size)
 	if err != nil {
 		return nil, nil, err
 	}

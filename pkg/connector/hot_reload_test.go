@@ -268,6 +268,33 @@ func TestHotReload_CustomTypeAfterEmptyStartRequiresRestart(t *testing.T) {
 	require.Equal(t, codes.NotFound, status.Code(err))
 }
 
+func TestHotReload_SchemaDriftCheckIsLevelTriggered(t *testing.T) {
+	// Schema drift (file types with no registered syncer) persists until
+	// restart, so its detection must run on EVERY Validate — including ones
+	// where the file content is unchanged — not just the sync where the
+	// drift first appeared. The occurrence counter drives logarithmic log
+	// sampling (warns at 1, 2, 4, 8, ...) and is the observable contract.
+	path := filepath.Join(t.TempDir(), "input.csv")
+	server, fc := startServer(t, path, hotReloadCSVHeaderOnly)
+
+	// Introduce a custom "team" type that the empty start did not register.
+	require.NoError(t, os.WriteFile(path, []byte(hotReloadCSVBase), 0o600))
+	require.NoError(t, serverValidate(t, server))
+	require.EqualValues(t, 1, fc.driftOccurrences.Load())
+
+	// The file does not change, but the drift persists — every subsequent
+	// Validate (sync start or health probe) must still count it.
+	require.NoError(t, serverValidate(t, server))
+	require.NoError(t, serverValidate(t, server))
+	require.EqualValues(t, 3, fc.driftOccurrences.Load())
+
+	// Drift resolves (only standard types remain): counter resets so a new
+	// drift episode warns immediately.
+	require.NoError(t, os.WriteFile(path, []byte(hotReloadCSVStandardTypes), 0o600))
+	require.NoError(t, serverValidate(t, server))
+	require.EqualValues(t, 0, fc.driftOccurrences.Load())
+}
+
 func TestHotReload_InvalidFileAtStartupRequiresRestart(t *testing.T) {
 	// Pins the known limit documented on cacheHolder: hot-load cannot
 	// recover a process that STARTED with an invalid file. ResourceSyncers()

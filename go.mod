@@ -3,7 +3,7 @@ module github.com/conductorone/baton-file
 go 1.25.2
 
 require (
-	github.com/conductorone/baton-sdk v0.26.0
+	github.com/conductorone/baton-sdk v0.28.0
 	github.com/ennyjfrick/ruleguard-logfatal v0.0.2
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/quasilyte/go-ruleguard/dsl v0.3.23
@@ -78,9 +78,9 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.42.1 // indirect
 	github.com/aws/smithy-go v1.25.1 // indirect
 	github.com/benbjohnson/clock v1.3.5 // indirect
-	github.com/conductorone/dpop v0.2.6 // indirect
-	github.com/conductorone/dpop/integrations/dpop_grpc v0.2.4 // indirect
-	github.com/conductorone/dpop/integrations/dpop_oauth2 v0.2.5 // indirect
+	github.com/conductorone/dpop v0.3.0 // indirect
+	github.com/conductorone/dpop/integrations/dpop_grpc v0.3.0 // indirect
+	github.com/conductorone/dpop/integrations/dpop_oauth2 v0.3.0 // indirect
 	github.com/deckarep/golang-set/v2 v2.9.0 // indirect
 	github.com/doug-martin/goqu/v9 v9.19.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect

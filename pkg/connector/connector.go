@@ -2,10 +2,14 @@ package connector
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/conductorone/baton-file/pkg/client"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
@@ -24,8 +28,121 @@ import (
 
 type FileConnector struct {
 	inputFilePath string
-	validatedData *client.LoadedData
+	cache         cacheHolder
+
+	// refreshMu serializes the read → build → publish sequence (refresh).
+	// The holder's atomic pointer keeps readers lock-free, but without this
+	// lock two concurrent Validate() calls (a health probe racing a sync
+	// start across two file edits) could publish out of order and leave the
+	// holder one generation stale until the next Validate(). A
+	// CompareAndSwap loop cannot fix that: generations are content hashes
+	// with no ordering, so on CAS failure there is no way to tell which
+	// build is newer. Serializing the whole sequence makes publish order
+	// follow file-read order, and also prevents two full cache builds from
+	// running concurrently (which would triple peak memory).
+	refreshMu sync.Mutex
+
+	// registeredTypes records the resource type IDs registered by the
+	// construction-time ResourceSyncers() call. Written once during
+	// construction (before the gRPC server starts serving) and read-only
+	// afterwards, so it needs no lock. Validate() uses it to warn when a
+	// file edit introduces types that have no registered syncer and
+	// therefore will not sync until restart.
+	registeredTypes map[string]struct{}
+
+	// driftOccurrences counts consecutive Validate() calls that observed
+	// unregistered resource types, driving logarithmic log sampling: the
+	// drift condition persists until restart, so it must warn repeatedly
+	// (level-triggered, not just on the sync where it appeared), but
+	// Validate also runs on every health probe, so warning every time
+	// would flood logs. Reset to zero when the drift resolves.
+	driftOccurrences atomic.Uint64
 }
+
+// refresh re-reads the input file and publishes a fresh cache when its
+// contents changed, returning the cache now being served and whether it was
+// republished. On error nothing is stored, so the previously published cache
+// keeps serving last-known-good data.
+func (fc *FileConnector) refresh(ctx context.Context) (*syncCache, bool, error) {
+	fc.refreshMu.Lock()
+	defer fc.refreshMu.Unlock()
+
+	previous := fc.cache.load()
+	cache, err := loadValidatedCache(ctx, fc.inputFilePath, previous)
+	if err != nil {
+		return nil, false, err
+	}
+	if cache == previous {
+		return cache, false, nil
+	}
+	fc.cache.store(cache)
+	return cache, true, nil
+}
+
+// cacheHolder shares the live syncCache between the FileConnector and every
+// resourceBuilder, so the cache built from the current file contents can be
+// swapped in atomically on each sync.
+//
+// IMPORTANT — hot-load contract (do not break):
+// The SDK constructs the connector and calls ResourceSyncers() exactly ONCE
+// per process, before its task loop starts. In a long-running service the
+// only per-sync hook this connector gets is Validate(), so Validate() is
+// where the input file is re-read and the fresh syncCache is published here.
+// Data-section changes to the file MUST be picked up on the next sync without
+// a restart; only schema changes (a new resource type, or a trait change to
+// an existing type) require one. Do NOT capture a *syncCache snapshot in a
+// builder, and do NOT assume the SDK refreshes anything between syncs (it
+// does not — that assumption caused the original hot-load regression in
+// PR #40). TestHotReload_DataChangesPickedUpBySync enforces this contract.
+//
+// This is deliberate instance state, a documented deviation from the skills'
+// stateless-connector rule: that rule assumes a remote API as the source of
+// truth, whereas here the file IS the source of truth and is re-read on every
+// sync, so a cold start is identical to a warm one. The swap normally happens
+// at sync start (Validate), but the SDK's health-check endpoint also calls
+// Validate and can swap mid-sync; page tokens are therefore stamped with the
+// cache generation (syncCache.gen) so an in-flight listing restarts instead
+// of resuming into a different generation's offsets. During a swap both old
+// and new caches are briefly live (~2x peak memory for the dataset).
+//
+// Known limit: generation stamps make each individual listing consistent,
+// not a whole sync. If the file genuinely changes mid-sync and a health
+// probe swaps the cache, phases that already ran (e.g. List) reflect the old
+// generation while later phases (e.g. Grants) reflect the new one — a
+// one-sync inconsistency (such as a grant whose principal was never listed)
+// that the next sync heals. The connector cannot pin a cache per sync: a
+// probe Validate and a sync-start Validate arrive as the same RPC, and no
+// sync-lifecycle hook exists. The fingerprint short-circuit in
+// loadValidatedCache confines this to actual content changes — unchanged
+// files never swap. Because the window cannot be closed connector-side, it
+// is made observable instead: paginate() logs a Warn every time a
+// generation mismatch actually restarts a listing, so routine mid-sync
+// swaps (e.g. an externally rewritten file under frequent probes) show up
+// in logs rather than having to be inferred.
+//
+// Known limit: hot-load requires a successful start. ResourceSyncers()
+// performs the first load at construction; if the file is INVALID at that
+// moment, zero resource types are registered for the process lifetime and
+// every sync fails until the file is fixed AND the process restarts (see
+// ResourceSyncers). TestHotReload_InvalidFileAtStartupRequiresRestart pins
+// this behavior. A file that is valid but has no data rows is NOT this trap:
+// it is a legitimate empty source of truth — ResourceSyncers registers the
+// standard trait types so syncs succeed (empty) and later data rows
+// hot-load; TestHotReload_EmptyFileAtStartupSyncsAndHotLoads pins that.
+type cacheHolder struct {
+	p atomic.Pointer[syncCache]
+}
+
+// load is nil-receiver-safe because StaticCapabilitiesConnector builds
+// resourceBuilders without a holder.
+func (h *cacheHolder) load() *syncCache {
+	if h == nil {
+		return nil
+	}
+	return h.p.Load()
+}
+
+func (h *cacheHolder) store(cache *syncCache) { h.p.Store(cache) }
 
 func (fc *FileConnector) Close() error { return nil }
 
@@ -57,6 +174,12 @@ func (s *StaticCapabilitiesConnector) ResourceSyncers(_ context.Context) []conne
 }
 
 type syncCache struct {
+	// gen fingerprints the file contents this cache was built from; it is
+	// stamped into page tokens so a listing resumed against a different
+	// generation restarts instead of replaying offsets into changed slices
+	// (see paginate). Empty for caches built directly in tests.
+	gen string
+
 	resourceTypes map[string]*v2.ResourceType
 	resources     map[string]*v2.Resource
 	entitlements  map[string]*v2.Entitlement
@@ -109,9 +232,108 @@ func (fc *FileConnector) Validate(ctx context.Context) (annotations.Annotations,
 		return nil, fmt.Errorf("baton-file: error accessing input file: %w", err)
 	}
 
-	data, err := client.LoadFileData(fc.inputFilePath)
+	// Re-read, validate, and publish the file's current contents. Validate()
+	// runs at the start of every sync, so this is the hot-load refresh point
+	// (see cacheHolder).
+	cache, changed, err := fc.refresh(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("baton-file: input file is invalid: %w", err)
+		return nil, err
+	}
+	if changed {
+		// Debug, not Info: this fires on every sync AND every health-check
+		// probe, so Info would flood default logs on probed deployments.
+		ctxzap.Extract(ctx).Debug("baton-file: refreshed data from input file",
+			zap.Int("resource_types", len(cache.resourceTypes)),
+			zap.Int("resources", len(cache.resources)))
+	}
+
+	// Schema drift is otherwise silent: rows whose resource type was not
+	// registered at startup simply never sync. The condition persists until
+	// restart, so this check is level-triggered — it runs on EVERY
+	// Validate(), not just the one where the file changed — with logarithmic
+	// sampling (occurrences 1, 2, 4, 8, ...) so probed deployments are not
+	// flooded. registeredTypes is nil only when ResourceSyncers() has not
+	// run (unit tests calling Validate directly); skip the check there.
+	if fc.registeredTypes != nil {
+		var missing []string
+		for typeID := range cache.resourceTypes {
+			if _, ok := fc.registeredTypes[typeID]; !ok {
+				missing = append(missing, typeID)
+			}
+		}
+		if len(missing) == 0 {
+			fc.driftOccurrences.Store(0)
+		} else if n := fc.driftOccurrences.Add(1); n&(n-1) == 0 {
+			sort.Strings(missing)
+			ctxzap.Extract(ctx).Warn(
+				"baton-file: file contains resource types not registered at startup; restart the service to sync them",
+				zap.Strings("resource_types", missing),
+				zap.Uint64("total_occurrences", n))
+		}
+	}
+
+	return nil, nil
+}
+
+// loadValidatedCache reads the input file, runs all cross-record validations,
+// and builds the derived sync cache from it. When the file's content
+// fingerprint matches the current cache's generation, current is returned
+// unchanged: the rebuild would be identical, and skipping it both avoids
+// redundant work on health-check probes and keeps no-op Validate calls from
+// swapping the pointer under an in-flight sync.
+func loadValidatedCache(ctx context.Context, inputFilePath string, current *syncCache) (*syncCache, error) {
+	// The gen fingerprint stamped into page tokens (see paginate) must
+	// describe the bytes the parser actually consumed, but the loaders take
+	// a path rather than bytes, so the file is read twice: once to hash,
+	// once to parse. An edit racing between those reads would mislabel the
+	// build — and a later revert to the hashed content would then
+	// short-circuit onto the mislabeled cache indefinitely — so the file is
+	// hashed AGAIN after parsing and the load retried when the fingerprints
+	// disagree. Hashing raw content is format-agnostic and exact, and the
+	// extra reads are cheap next to parsing.
+	const maxLoadAttempts = 3
+	var data *client.LoadedData
+	var gen string
+	for attempt := 1; ; attempt++ {
+		raw, err := os.ReadFile(inputFilePath)
+		if err != nil {
+			return nil, fmt.Errorf("baton-file: failed to read input file: %w", err)
+		}
+		sum := sha256.Sum256(raw)
+		gen = hex.EncodeToString(sum[:8])
+
+		if current != nil && current.gen == gen {
+			return current, nil
+		}
+
+		data, err = client.LoadFileData(inputFilePath)
+		if err != nil {
+			// A rewrite landing during the parse can tear the read and make
+			// a perfectly valid file transiently unparseable — at startup
+			// that would needlessly force a process restart. Distinguish a
+			// racing write from a genuinely invalid file by re-hashing:
+			// changed (or momentarily unreadable) bytes mean a racing write,
+			// so retry; unchanged bytes mean the parse error is real.
+			if attempt < maxLoadAttempts {
+				verify, verr := os.ReadFile(inputFilePath)
+				if verr != nil || sha256.Sum256(verify) != sum {
+					continue
+				}
+			}
+			return nil, fmt.Errorf("baton-file: input file is invalid: %w", err)
+		}
+
+		verify, err := os.ReadFile(inputFilePath)
+		if err != nil {
+			return nil, fmt.Errorf("baton-file: failed to read input file: %w", err)
+		}
+		if sha256.Sum256(verify) == sum {
+			break
+		}
+		if attempt >= maxLoadAttempts {
+			return nil, fmt.Errorf(
+				"baton-file: input file kept changing while being loaded; retry once the file is stable")
+		}
 	}
 
 	if err := client.ValidateUniqueIDs(data); err != nil {
@@ -134,61 +356,80 @@ func (fc *FileConnector) Validate(ctx context.Context) (annotations.Annotations,
 		return nil, err
 	}
 
-	fc.validatedData = data
-
-	return nil, nil
+	cache, err := newSyncCache(ctx, data)
+	if err != nil {
+		return nil, err
+	}
+	cache.gen = gen
+	return cache, nil
 }
 
 func (fc *FileConnector) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncerV2 {
 	l := ctxzap.Extract(ctx)
 
-	// Validate() caches parsed data; reuse it here to avoid a double load.
-	// Fallback re-loads if Validate() wasn't called. This method's signature
-	// cannot return an error, so log-and-return-nil is intentional — the
-	// connector stays alive for the next sync cycle.
-	loadedData := fc.validatedData
-	if loadedData == nil {
-		var err error
-		loadedData, err = client.LoadFileData(fc.inputFilePath)
-		if err != nil {
-			l.Error("baton-file: failed to load input file", zap.Error(err))
-			return nil
-		}
-		if err := client.ValidateUniqueIDs(loadedData); err != nil {
-			l.Error("baton-file: validation failed", zap.Error(err))
-			return nil
-		}
-		if err := client.ValidateTraits(loadedData); err != nil {
-			l.Error("baton-file: validation failed", zap.Error(err))
-			return nil
-		}
-		if err := client.ValidateEntitlementFields(loadedData); err != nil {
-			l.Error("baton-file: validation failed", zap.Error(err))
-			return nil
-		}
-		if err := client.ValidateSecretFields(loadedData); err != nil {
-			l.Error("baton-file: validation failed", zap.Error(err))
-			return nil
-		}
-		if err := client.ValidateReferences(loadedData); err != nil {
-			l.Error("baton-file: validation failed", zap.Error(err))
-			return nil
-		}
-	}
-	fc.validatedData = nil
-
-	cache, err := newSyncCache(ctx, loadedData)
+	// IMPORTANT: the SDK calls this exactly ONCE per process, inside
+	// connectorbuilder.NewConnector at construction (vendor/.../
+	// connectorbuilder/connectorbuilder.go:216), BEFORE any Validate() —
+	// this is the FIRST load of the file, not a fallback. The set of
+	// resource types registered here is fixed for the process lifetime;
+	// Validate() then refreshes the data behind fc.cache on every sync. See
+	// cacheHolder for the hot-load contract.
+	cache, _, err := fc.refresh(ctx)
 	if err != nil {
-		l.Error("baton-file: failed to build sync cache", zap.Error(err))
+		// The signature cannot return an error, so log-and-return-nil is
+		// all that is possible — and the consequence is severe: with zero
+		// syncers registered, every sync fails with FailedPrecondition
+		// ("no resource builders found", vendor/.../connectorbuilder/
+		// resource_syncer.go:102) even after the operator fixes the file.
+		// Recovering from a bad file AT STARTUP requires a process restart;
+		// hot-load only helps a connector that started with a valid file.
+		// Warn, not Error: Validate() returns the real error to the SDK on
+		// every sync, so this log is a secondary signal, and house rules
+		// classify input failures as Warn.
+		l.Warn("baton-file: failed to load input file at startup; syncs will fail until the file is fixed and the service is restarted",
+			zap.Error(err))
 		return nil
 	}
 
 	var syncers []connectorbuilder.ResourceSyncerV2
-	for _, rt := range cache.resourceTypes {
-		syncers = append(syncers, &resourceBuilder{cache: cache, resourceType: rt})
+	if len(cache.resourceTypes) == 0 {
+		// A valid file with no data rows is a legitimate state — an empty
+		// source of truth — not an error. Register the standard trait types
+		// (the same set StaticCapabilitiesConnector declares as this
+		// connector's capabilities) so syncs succeed, emit nothing, and
+		// data rows added to the file later hot-load without a restart.
+		// Rows using CUSTOM type IDs still need a restart, like any schema
+		// change; Validate() warns when it sees them.
+		for name := range TraitMap {
+			syncers = append(syncers, &resourceBuilder{
+				cache:        &fc.cache,
+				resourceType: buildDynamicResourceType(name, name),
+			})
+		}
+		l.Info("baton-file: input file has no data rows; registered standard resource types",
+			zap.Int("count", len(syncers)))
+	} else {
+		for _, rt := range cache.resourceTypes {
+			// resourceType is INTENTIONALLY frozen at registration time and
+			// never refreshed from later cache generations. Hot-load covers
+			// the file's data sections only; schema — the set of resource
+			// types and their traits — is fixed for the process lifetime
+			// because the SDK registers syncers by type exactly once.
+			// Editing an existing type's trait in the file therefore
+			// requires a restart, same as adding a new type; resolving rt
+			// from the live cache here would not change that, since the
+			// SDK-side registration would still hold the startup-time type.
+			syncers = append(syncers, &resourceBuilder{cache: &fc.cache, resourceType: rt})
+		}
+		l.Info("baton-file: created resource syncers", zap.Int("count", len(syncers)))
 	}
 
-	l.Info("baton-file: created resource syncers", zap.Int("count", len(syncers)))
+	fc.registeredTypes = make(map[string]struct{}, len(syncers))
+	for _, s := range syncers {
+		if rb, ok := s.(*resourceBuilder); ok {
+			fc.registeredTypes[rb.resourceType.GetId()] = struct{}{}
+		}
+	}
 	return syncers
 }
 

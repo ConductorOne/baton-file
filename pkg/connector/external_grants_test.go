@@ -50,7 +50,7 @@ func TestGrants_ExternalGrant_AttributeMatch(t *testing.T) {
 	cache, err := newSyncCache(ctx, data)
 	require.NoError(t, err)
 
-	b := &resourceBuilder{cache: cache, resourceType: cache.resourceTypes["app"]}
+	b := testBuilder(cache, cache.resourceTypes["app"])
 	grants := allGrants(t, b, cache.resources["payroll-app"])
 	require.Len(t, grants, 1)
 
@@ -77,7 +77,7 @@ func TestGrants_ExternalGrant_MatchAll(t *testing.T) {
 	cache, err := newSyncCache(ctx, data)
 	require.NoError(t, err)
 
-	b := &resourceBuilder{cache: cache, resourceType: cache.resourceTypes["app"]}
+	b := testBuilder(cache, cache.resourceTypes["app"])
 	grants := allGrants(t, b, cache.resources["payroll-app"])
 	require.Len(t, grants, 1)
 
@@ -100,7 +100,7 @@ func TestGrants_ExternalGrant_MatchID(t *testing.T) {
 	cache, err := newSyncCache(ctx, data)
 	require.NoError(t, err)
 
-	b := &resourceBuilder{cache: cache, resourceType: cache.resourceTypes["app"]}
+	b := testBuilder(cache, cache.resourceTypes["app"])
 	grants := allGrants(t, b, cache.resources["payroll-app"])
 	require.Len(t, grants, 1)
 
@@ -125,7 +125,7 @@ func TestGrants_ExternalGrant_Expansion(t *testing.T) {
 	cache, err := newSyncCache(ctx, data)
 	require.NoError(t, err)
 
-	b := &resourceBuilder{cache: cache, resourceType: cache.resourceTypes["app"]}
+	b := testBuilder(cache, cache.resourceTypes["app"])
 	grants := allGrants(t, b, cache.resources["payroll-app"])
 	require.Len(t, grants, 1)
 
@@ -156,7 +156,7 @@ func TestGrants_ExternalGrant_Expansion_DefaultDepthIsFull(t *testing.T) {
 	cache, err := newSyncCache(ctx, data)
 	require.NoError(t, err)
 
-	b := &resourceBuilder{cache: cache, resourceType: cache.resourceTypes["app"]}
+	b := testBuilder(cache, cache.resourceTypes["app"])
 	grants := allGrants(t, b, cache.resources["payroll-app"])
 	require.Len(t, grants, 1)
 
@@ -190,7 +190,7 @@ func TestGrants_ExternalGrant_Expansion_SkipsInvalidCombos(t *testing.T) {
 	cache, err := newSyncCache(ctx, data)
 	require.NoError(t, err)
 
-	b := &resourceBuilder{cache: cache, resourceType: cache.resourceTypes["app"]}
+	b := testBuilder(cache, cache.resourceTypes["app"])
 	grants := allGrants(t, b, cache.resources["payroll-app"])
 	require.Empty(t, grants, "invalid expansion combinations must be skipped")
 }
@@ -232,7 +232,7 @@ func TestGrants_ExternalGrant_SkipsInvalidRows(t *testing.T) {
 	cache, err := newSyncCache(ctx, data)
 	require.NoError(t, err)
 
-	b := &resourceBuilder{cache: cache, resourceType: cache.resourceTypes["app"]}
+	b := testBuilder(cache, cache.resourceTypes["app"])
 	grants := allGrants(t, b, cache.resources["payroll-app"])
 	require.Empty(t, grants, "invalid external grant rows must be skipped, not emitted")
 }

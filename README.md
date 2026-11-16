@@ -1,4 +1,4 @@
-![Baton Logo](./docs/images/baton-logo.png)
+![Baton Logo](./baton-logo.png)
 
 #
 
